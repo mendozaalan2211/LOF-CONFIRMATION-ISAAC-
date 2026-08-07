@@ -12,7 +12,7 @@ import { SEED_STUDENTS, SEED_COACHES, DEFAULT_STAGES } from "./seedData.js";
 // ============================================================
 
 // ---- Admin PIN (cambialo por el tuyo) ----
-const ADMIN_PIN = "1234";
+const ADMIN_PIN = "2211";
 
 // ------------------------------------------------------------
 //  Almacenamiento en Supabase
@@ -116,6 +116,9 @@ export default function LOFDashboard() {
   function toggleAttendance(id) {
     persist(students.map((e) => e.id === id ? { ...e, attendance: { ...e.attendance, [date]: !e.attendance[date] } } : e));
   }
+  function toggleConfirmed(id) {
+    persist(students.map((e) => e.id === id ? { ...e, confirmed: { ...(e.confirmed || {}), [date]: !((e.confirmed || {})[date]) } } : e));
+  }
   function addStage(name) {
     const clean = name.trim(); if (!clean || stages.includes(clean)) return;
     persist(undefined, [...stages, clean]);
@@ -153,6 +156,7 @@ export default function LOFDashboard() {
     const group = students.filter((e) => e.coach === coach && e.active !== false);
     const total = group.length;
     const present = group.filter((e) => e.attendance[date]).length;
+    const confirmed = group.filter((e) => (e.confirmed || {})[date]).length;
     const attPct = total ? Math.round((present / total) * 100) : 0;
     const byStage = {};
     stages.forEach((st) => { byStage[st] = group.filter((e) => e.steps[st]).length; });
@@ -160,7 +164,7 @@ export default function LOFDashboard() {
     const totalBoxes = total * stages.length;
     const filled = group.reduce((sum, e) => sum + stages.filter((st) => e.steps[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
-    return { total, present, attPct, byStage, complete, progPct };
+    return { total, present, confirmed, attPct, byStage, complete, progPct };
   }
 
   const totals = useMemo(() => {
@@ -168,18 +172,19 @@ export default function LOFDashboard() {
     const act = students.filter((e) => e.active !== false);
     const total = act.length;
     const present = act.filter((e) => e.attendance[date]).length;
+    const confirmed = act.filter((e) => (e.confirmed || {})[date]).length;
     const complete = act.filter((e) => stages.length > 0 && stages.every((st) => e.steps[st])).length;
     const byStage = {};
     stages.forEach((st) => { byStage[st] = act.filter((e) => e.steps[st]).length; });
     const totalBoxes = total * stages.length;
     const filled = act.reduce((sum, e) => sum + stages.filter((st) => e.steps[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
-    return { total, present, attPct: total ? Math.round(present/total*100) : 0, complete, byStage, progPct };
+    return { total, present, confirmed, attPct: total ? Math.round(present/total*100) : 0, complete, byStage, progPct };
   }, [students, stages, date]);
 
   const history = useMemo(() => {
     if (!students) return [];
-    const weeks = lastWeeks(6);
+    const weeks = lastWeeks(12);
     const act = students.filter((e) => e.active !== false);
     const total = act.length || 1;
     return weeks.map((iso) => {
@@ -264,7 +269,6 @@ export default function LOFDashboard() {
         <div style={S.topbar}>
           <button className="lof-burger" style={S.burger} onClick={() => setSidebarOpen(true)}>&#9776;</button>
           <div>
-            <div style={S.eyebrow}>FREEDOM EN ESPANOL</div>
             <h1 style={S.h1}>{inOverview ? "Dashboard" : coachSel}</h1>
             <div style={S.live}><span style={S.liveDot} /> Live</div>
           </div>
@@ -291,7 +295,7 @@ export default function LOFDashboard() {
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages} date={date} history={history} onCoach={setCoachSel} />
         ) : (
           <CoachView coach={coachSel} students={students.filter((e) => e.coach === coachSel)}
-            stats={statsCoach(coachSel)} stages={stages} date={date} toggleStep={toggleStep} toggleAttendance={toggleAttendance} />
+            stats={statsCoach(coachSel)} stages={stages} date={date} toggleStep={toggleStep} toggleAttendance={toggleAttendance} toggleConfirmed={toggleConfirmed} />
         )}
       </main>
 
@@ -355,7 +359,7 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
       <div style={S.chartCard}>
         <div style={S.tableHead}>
           <span style={S.tableTitle}>Attendance history</span>
-          <span style={S.tableSub}>&middot; last 6 weeks</span>
+          <span style={S.tableSub}>&middot; last 12 weeks</span>
         </div>
         <div style={S.chart}>
           {history.map((h) => (
@@ -382,6 +386,7 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
                 <th style={{ ...S.th, ...S.thLeft }}>Coach</th>
                 <th style={S.th}>Students</th>
                 <th style={S.th}>Present</th>
+                <th style={S.th}>Confirm</th>
                 <th style={S.th}>Att.%</th>
                 {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
                 <th style={S.th}>Complete</th>
@@ -393,6 +398,7 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
                   <td style={{ ...S.td, ...S.tdName }}>{c}</td>
                   <td style={S.td}>{s.total}</td>
                   <td style={{ ...S.td, color: s.present ? "#6ee7a8" : MUTE }}>{s.present}</td>
+                  <td style={{ ...S.td, color: s.confirmed ? "#8ab4f8" : MUTE }}>{s.confirmed}</td>
                   <td style={{ ...S.td, color: pctColor(s.attPct) }}>{s.attPct}%</td>
                   {stages.map((st) => (
                     <td key={st} style={{ ...S.td, color: s.byStage[st] ? GOLD : MUTE }}>{s.byStage[st]}</td>
@@ -449,14 +455,14 @@ function SearchView({ results, stages, date, onCoach }) {
   );
 }
 
-function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAttendance }) {
+function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAttendance, toggleConfirmed }) {
   const [tab, setTab] = useState("progress");
   return (
     <>
       <div className="lof-coachstats" style={S.coachStats}>
         <Stat n={stats.total} l="Students" />
         <Stat n={stats.present} l={"Present . " + prettyDate(date)} c="#6ee7a8" />
-        <Stat n={stats.attPct + "%"} l="Attendance" c={GOLD} />
+        <Stat n={stats.confirmed} l={"Confirmed . " + prettyDate(date)} c="#8ab4f8" />
         <Stat n={stats.progPct + "%"} l="Progress" c={GOLD} />
       </div>
 
@@ -473,6 +479,7 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
         {students.map((e) => {
           const done = stages.filter((st) => e.steps[st]).length;
           const present = !!e.attendance[date];
+          const confirmed = !!(e.confirmed || {})[date];
           const inactive = e.active === false;
           return (
             <div key={e.id} style={{ ...S.card, ...(inactive ? S.cardInactive : {}) }}>
@@ -484,9 +491,14 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
                 {inactive ? null : tab === "progress" ? (
                   <div style={S.progress}>{done}/{stages.length}</div>
                 ) : (
-                  <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn, ...(present ? S.attOn : {}) }}>
-                    {present ? "\u2713 Present" : "Mark present"}
-                  </button>
+                  <div style={S.checkBtns}>
+                    <button onClick={() => toggleConfirmed(e.id)} style={{ ...S.attBtn, ...(confirmed ? S.confOn : {}) }}>
+                      {confirmed ? "\u2713 Confirmed" : "Confirmed"}
+                    </button>
+                    <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn, ...(present ? S.attOn : {}) }}>
+                      {present ? "\u2713 Present" : "Present"}
+                    </button>
+                  </div>
                 )}
               </div>
               <StudentInfo e={e} />
@@ -811,7 +823,7 @@ const S = {
   tdName: { textAlign: "left", paddingLeft: 20, fontWeight: 600 },
   hint: { fontSize: 12.5, color: MUTE, marginTop: 14, textAlign: "center" },
   empty: { background: PANEL, border: "1px dashed " + LINE, borderRadius: 16, padding: "28px", textAlign: "center", color: MUTE, fontSize: 14 },
-  coachStats: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 },
+  coachStats: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 },
   statBox: { background: PANEL, border: "1px solid " + LINE, borderRadius: 16, padding: "16px 18px" },
   statN: { fontSize: 28, fontWeight: 800, letterSpacing: "-1px" },
   statL: { fontSize: 11.5, color: MUTE, marginTop: 2 },
@@ -826,6 +838,8 @@ const S = {
   progress: { fontSize: 13, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "4px 12px" },
   attBtn: { border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   attOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
+  confOn: { background: "#16304d", borderColor: "#2f5c8a", color: "#8ab4f8" },
+  checkBtns: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" },
   steps: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
   step: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 10, padding: "8px 12px", fontSize: 13, cursor: "pointer", transition: "all .12s ease" },
   stepOn: { borderColor: "rgba(200,162,75,0.5)", background: GOLD_SOFT, color: TXT },
