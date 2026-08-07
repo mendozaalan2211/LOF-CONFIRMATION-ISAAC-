@@ -12,7 +12,7 @@ import { SEED_STUDENTS, SEED_COACHES, DEFAULT_STAGES } from "./seedData.js";
 // ============================================================
 
 // ---- Admin PIN (cambialo por el tuyo) ----
-const ADMIN_PIN = "2211";
+const ADMIN_PIN = "1234";
 
 // ------------------------------------------------------------
 //  Almacenamiento en Supabase
@@ -354,24 +354,6 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
           const bgs = [null, "#eff4ff", GOLD_SOFT];
           return <MiniCard key={st} tag={st} tagColor={colors[i]} tagBg={bgs[i]} value={totals.byStage[st]} total={totals.total} />;
         })}
-      </div>
-
-      <div style={S.chartCard}>
-        <div style={S.tableHead}>
-          <span style={S.tableTitle}>Attendance history</span>
-          <span style={S.tableSub}>&middot; last 12 weeks</span>
-        </div>
-        <div style={S.chart}>
-          {history.map((h) => (
-            <div key={h.iso} style={S.chartCol}>
-              <div style={S.chartBarWrap}>
-                <div style={S.chartVal}>{h.present}</div>
-                <div style={{ ...S.chartBar, height: Math.max(6, (h.pct / maxPct) * 130) + "px" }} />
-              </div>
-              <div style={S.chartLabel}>{prettyDate(h.iso)}</div>
-            </div>
-          ))}
-        </div>
       </div>
 
       <div style={S.tableCard}>
