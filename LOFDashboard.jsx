@@ -295,7 +295,7 @@ export default function LOFDashboard() {
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages} date={date} history={history} onCoach={setCoachSel} />
         ) : (
           <CoachView coach={coachSel} students={students.filter((e) => e.coach === coachSel)}
-            stats={statsCoach(coachSel)} stages={stages} date={date} toggleStep={toggleStep} toggleAttendance={toggleAttendance} toggleConfirmed={toggleConfirmed} />
+            stats={statsCoach(coachSel)} stages={stages} date={date} toggleStep={toggleStep} toggleAttendance={toggleAttendance} />
         )}
       </main>
 
@@ -368,7 +368,6 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
                 <th style={{ ...S.th, ...S.thLeft }}>Coach</th>
                 <th style={S.th}>Students</th>
                 <th style={S.th}>Present</th>
-                <th style={S.th}>Confirm</th>
                 <th style={S.th}>Att.%</th>
                 {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
                 <th style={S.th}>Complete</th>
@@ -380,7 +379,6 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
                   <td style={{ ...S.td, ...S.tdName }}>{c}</td>
                   <td style={S.td}>{s.total}</td>
                   <td style={{ ...S.td, color: s.present ? "#6ee7a8" : MUTE }}>{s.present}</td>
-                  <td style={{ ...S.td, color: s.confirmed ? "#8ab4f8" : MUTE }}>{s.confirmed}</td>
                   <td style={{ ...S.td, color: pctColor(s.attPct) }}>{s.attPct}%</td>
                   {stages.map((st) => (
                     <td key={st} style={{ ...S.td, color: s.byStage[st] ? GOLD : MUTE }}>{s.byStage[st]}</td>
@@ -437,14 +435,14 @@ function SearchView({ results, stages, date, onCoach }) {
   );
 }
 
-function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAttendance, toggleConfirmed }) {
+function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAttendance }) {
   const [tab, setTab] = useState("progress");
+  const [presentOnly, setPresentOnly] = useState(false);
   return (
     <>
       <div className="lof-coachstats" style={S.coachStats}>
         <Stat n={stats.total} l="Students" />
         <Stat n={stats.present} l={"Present . " + prettyDate(date)} c="#6ee7a8" />
-        <Stat n={stats.confirmed} l={"Confirmed . " + prettyDate(date)} c="#8ab4f8" />
         <Stat n={stats.progPct + "%"} l="Progress" c={GOLD} />
       </div>
 
@@ -453,15 +451,23 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
           <button style={{ ...S.tab, ...(tab === "progress" ? S.tabOn : {}) }} onClick={() => setTab("progress")}>Progress</button>
           <button style={{ ...S.tab, ...(tab === "checkin" ? S.tabOn : {}) }} onClick={() => setTab("checkin")}>Check-in</button>
         </div>
+        {tab === "checkin" && (
+          <button
+            onClick={() => setPresentOnly(!presentOnly)}
+            style={{ ...S.filterBtn, ...(presentOnly ? S.filterBtnOn : {}) }}>
+            {presentOnly ? "\u2713 Present only" : "Show present only"}
+          </button>
+        )}
       </div>
 
       {students.length === 0 && <div style={S.empty}>No students yet for this coach. Add them from the Admin panel.</div>}
 
       <div style={S.list}>
-        {students.map((e) => {
+        {students
+          .filter((e) => !(presentOnly && tab === "checkin") || e.attendance[date])
+          .map((e) => {
           const done = stages.filter((st) => e.steps[st]).length;
           const present = !!e.attendance[date];
-          const confirmed = !!(e.confirmed || {})[date];
           const inactive = e.active === false;
           return (
             <div key={e.id} style={{ ...S.card, ...(inactive ? S.cardInactive : {}) }}>
@@ -473,14 +479,9 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
                 {inactive ? null : tab === "progress" ? (
                   <div style={S.progress}>{done}/{stages.length}</div>
                 ) : (
-                  <div style={S.checkBtns}>
-                    <button onClick={() => toggleConfirmed(e.id)} style={{ ...S.attBtn, ...(confirmed ? S.confOn : {}) }}>
-                      {confirmed ? "\u2713 Confirmed" : "Confirmed"}
-                    </button>
-                    <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn, ...(present ? S.attOn : {}) }}>
-                      {present ? "\u2713 Present" : "Present"}
-                    </button>
-                  </div>
+                  <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn, ...(present ? S.attOn : {}) }}>
+                    {present ? "\u2713 Present" : "Mark present"}
+                  </button>
                 )}
               </div>
               <StudentInfo e={e} />
@@ -805,11 +806,11 @@ const S = {
   tdName: { textAlign: "left", paddingLeft: 20, fontWeight: 600 },
   hint: { fontSize: 12.5, color: MUTE, marginTop: 14, textAlign: "center" },
   empty: { background: PANEL, border: "1px dashed " + LINE, borderRadius: 16, padding: "28px", textAlign: "center", color: MUTE, fontSize: 14 },
-  coachStats: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 },
+  coachStats: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 },
   statBox: { background: PANEL, border: "1px solid " + LINE, borderRadius: 16, padding: "16px 18px" },
   statN: { fontSize: 28, fontWeight: 800, letterSpacing: "-1px" },
   statL: { fontSize: 11.5, color: MUTE, marginTop: 2 },
-  tabsRow: { marginBottom: 16 },
+  tabsRow: { marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" },
   tabs: { display: "inline-flex", gap: 4, background: PANEL, border: "1px solid " + LINE, borderRadius: 12, padding: 4 },
   tab: { border: "none", background: "transparent", color: MUTE, padding: "9px 20px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   tabOn: { background: GOLD, color: "#000" },
@@ -820,8 +821,8 @@ const S = {
   progress: { fontSize: 13, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "4px 12px" },
   attBtn: { border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   attOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
-  confOn: { background: "#16304d", borderColor: "#2f5c8a", color: "#8ab4f8" },
-  checkBtns: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" },
+  filterBtn: { border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  filterBtnOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
   steps: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
   step: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 10, padding: "8px 12px", fontSize: 13, cursor: "pointer", transition: "all .12s ease" },
   stepOn: { borderColor: "rgba(200,162,75,0.5)", background: GOLD_SOFT, color: TXT },
