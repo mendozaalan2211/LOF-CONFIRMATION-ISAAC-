@@ -367,9 +367,9 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
               <tr>
                 <th style={{ ...S.th, ...S.thLeft }}>Coach</th>
                 <th style={S.th}>Students</th>
+                {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
                 <th style={S.th}>Present</th>
                 <th style={S.th}>Att.%</th>
-                {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
                 <th style={S.th}>Complete</th>
               </tr>
             </thead>
@@ -377,12 +377,12 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
               {rankedCoaches.map(({ c, s }) => (
                 <tr key={c} style={S.tr} onClick={() => onCoach(c)}>
                   <td style={{ ...S.td, ...S.tdName }}>{c}</td>
-                  <td style={S.td}>{s.total}</td>
-                  <td style={{ ...S.td, color: s.present ? "#6ee7a8" : MUTE }}>{s.present}</td>
-                  <td style={{ ...S.td, color: pctColor(s.attPct) }}>{s.attPct}%</td>
+                  <td style={{ ...S.td, fontWeight: 700 }}>{s.total}</td>
                   {stages.map((st) => (
                     <td key={st} style={{ ...S.td, color: s.byStage[st] ? GOLD : MUTE }}>{s.byStage[st]}</td>
                   ))}
+                  <td style={{ ...S.td, color: s.present ? "#6ee7a8" : MUTE }}>{s.present}</td>
+                  <td style={{ ...S.td, color: pctColor(s.attPct) }}>{s.attPct}%</td>
                   <td style={{ ...S.td, fontWeight: 700, color: s.complete ? "#6ee7a8" : MUTE }}>{s.complete}</td>
                 </tr>
               ))}
@@ -799,10 +799,10 @@ const S = {
   tableSub: { fontSize: 12.5, color: MUTE },
   tableScroll: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", minWidth: 720 },
-  th: { fontSize: 11, fontWeight: 700, color: MUTE, textAlign: "center", padding: "10px 10px", borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: "0.4px" },
+  th: { fontSize: 11, fontWeight: 700, color: "rgba(245,245,244,0.65)", textAlign: "center", padding: "12px 10px", borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: "0.5px" },
   thLeft: { textAlign: "left", paddingLeft: 20 },
   tr: { cursor: "pointer", transition: "background .1s" },
-  td: { fontSize: 13.5, textAlign: "center", padding: "13px 10px", borderBottom: "1px solid " + LINE, whiteSpace: "nowrap" },
+  td: { fontSize: 14.5, fontWeight: 600, textAlign: "center", padding: "14px 10px", borderBottom: "1px solid " + LINE, whiteSpace: "nowrap" },
   tdName: { textAlign: "left", paddingLeft: 20, fontWeight: 600 },
   hint: { fontSize: 12.5, color: MUTE, marginTop: 14, textAlign: "center" },
   empty: { background: PANEL, border: "1px dashed " + LINE, borderRadius: 16, padding: "28px", textAlign: "center", color: MUTE, fontSize: 14 },
