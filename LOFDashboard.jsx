@@ -980,5 +980,3 @@ const S = {
   toggleOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
   toggleOff: { background: "transparent", color: MUTE },
 };
-
-        
