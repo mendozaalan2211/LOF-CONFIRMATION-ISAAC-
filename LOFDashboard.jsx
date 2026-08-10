@@ -419,6 +419,87 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, history, onCo
   );
 }
 
+function WeeksView({ students, coaches }) {
+  const [week, setWeek] = useState(currentWeekNum());
+  const iso = weekDateISO(week);
+
+  const act = students.filter((e) => e.active !== false);
+
+  const rows = coaches.map((c) => {
+    const group = act.filter((e) => e.coach === c);
+    const total = group.length;
+    const present = group.filter((e) => e.attendance[iso]).length;
+    const pct = total ? Math.round((present / total) * 100) : 0;
+    return { coach: c, present, total, pct };
+  });
+
+  const totalPresent = rows.reduce((s, r) => s + r.present, 0);
+  const totalStudents = rows.reduce((s, r) => s + r.total, 0);
+  const totalPct = totalStudents ? Math.round((totalPresent / totalStudents) * 100) : 0;
+
+  const weekNums = [];
+  for (let i = 1; i <= COURSE_WEEKS; i++) weekNums.push(i);
+
+  return (
+    <>
+      <div style={S.weekBar}>
+        {weekNums.map((w) => (
+          <button key={w}
+            onClick={() => setWeek(w)}
+            style={{ ...S.weekChip, ...(w === week ? S.weekChipOn : {}) }}>
+            {w}
+          </button>
+        ))}
+      </div>
+      <div style={S.weekMeta}>Week {week} of {COURSE_WEEKS} &middot; Sunday {prettyDate(iso)}</div>
+
+      <div style={S.weekTotalCard}>
+        <div>
+          <div style={S.weekTotalLabel}>Total present this Sunday</div>
+          <div style={S.weekTotalValue}>{totalPresent}<span style={S.weekTotalOf}> / {totalStudents}</span></div>
+        </div>
+        <div style={S.weekTotalPct}>{totalPct}%</div>
+      </div>
+
+      <div style={S.tableCard}>
+        <div style={S.tableHead}>
+          <span style={S.tableTitle}>Attendance by coach</span>
+          <span style={S.tableSub}>&middot; Week {week}</span>
+        </div>
+        <div style={S.tableScroll}>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={{ ...S.th, ...S.thLeft }}>Coach</th>
+                <th style={S.th}>Present</th>
+                <th style={S.th}>Students</th>
+                <th style={S.th}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.coach}>
+                  <td style={{ ...S.td, ...S.tdName }}>{r.coach}</td>
+                  <td style={{ ...S.td, fontWeight: 700, color: r.present ? "#6ee7a8" : MUTE }}>{r.present}</td>
+                  <td style={S.td}>{r.total}</td>
+                  <td style={{ ...S.td, color: pctColor(r.pct) }}>{r.pct}%</td>
+                </tr>
+              ))}
+              <tr style={S.weekTotalRow}>
+                <td style={{ ...S.td, ...S.tdName, fontWeight: 800 }}>TOTAL</td>
+                <td style={{ ...S.td, fontWeight: 800, color: "#6ee7a8" }}>{totalPresent}</td>
+                <td style={{ ...S.td, fontWeight: 800 }}>{totalStudents}</td>
+                <td style={{ ...S.td, fontWeight: 800, color: GOLD }}>{totalPct}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style={S.hint}>Mark attendance from each coach's Check-in tab. Numbers here update live.</div>
+    </>
+  );
+}
+
 function StudentInfo({ e }) {
   return (
     <div style={S.infoRow}>
@@ -899,3 +980,5 @@ const S = {
   toggleOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
   toggleOff: { background: "transparent", color: MUTE },
 };
+
+        
