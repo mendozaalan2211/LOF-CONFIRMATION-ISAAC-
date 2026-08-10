@@ -127,10 +127,10 @@ export default function LOFDashboard() {
   }
 
   function toggleStep(id, step) {
-    persist(students.map((e) => e.id === id ? { ...e, steps: { ...e.steps, [step]: !e.steps[step] } } : e));
+    persist(students.map((e) => e.id === id ? { ...e, steps: { ...(e.steps || {}), [step]: !(e.steps || {})[step] } } : e));
   }
   function toggleAttendance(id) {
-    persist(students.map((e) => e.id === id ? { ...e, attendance: { ...e.attendance, [date]: !e.attendance[date] } } : e));
+    persist(students.map((e) => e.id === id ? { ...e, attendance: { ...(e.attendance || {}), [date]: !(e.attendance || {})[date] } } : e));
   }
   function toggleConfirmed(id) {
     persist(students.map((e) => e.id === id ? { ...e, confirmed: { ...(e.confirmed || {}), [date]: !((e.confirmed || {})[date]) } } : e));
@@ -171,14 +171,14 @@ export default function LOFDashboard() {
   function statsCoach(coach) {
     const group = students.filter((e) => e.coach === coach && e.active !== false);
     const total = group.length;
-    const present = group.filter((e) => e.attendance[date]).length;
+    const present = group.filter((e) => (e.attendance || {})[date]).length;
     const confirmed = group.filter((e) => (e.confirmed || {})[date]).length;
     const attPct = total ? Math.round((present / total) * 100) : 0;
     const byStage = {};
-    stages.forEach((st) => { byStage[st] = group.filter((e) => e.steps[st]).length; });
-    const complete = group.filter((e) => stages.length > 0 && stages.every((st) => e.steps[st])).length;
+    stages.forEach((st) => { byStage[st] = group.filter((e) => (e.steps || {})[st]).length; });
+    const complete = group.filter((e) => stages.length > 0 && stages.every((st) => (e.steps || {})[st])).length;
     const totalBoxes = total * stages.length;
-    const filled = group.reduce((sum, e) => sum + stages.filter((st) => e.steps[st]).length, 0);
+    const filled = group.reduce((sum, e) => sum + stages.filter((st) => (e.steps || {})[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
     return { total, present, confirmed, attPct, byStage, complete, progPct };
   }
@@ -187,13 +187,13 @@ export default function LOFDashboard() {
     if (!students || !stages) return null;
     const act = students.filter((e) => e.active !== false);
     const total = act.length;
-    const present = act.filter((e) => e.attendance[date]).length;
+    const present = act.filter((e) => (e.attendance || {})[date]).length;
     const confirmed = act.filter((e) => (e.confirmed || {})[date]).length;
-    const complete = act.filter((e) => stages.length > 0 && stages.every((st) => e.steps[st])).length;
+    const complete = act.filter((e) => stages.length > 0 && stages.every((st) => (e.steps || {})[st])).length;
     const byStage = {};
-    stages.forEach((st) => { byStage[st] = act.filter((e) => e.steps[st]).length; });
+    stages.forEach((st) => { byStage[st] = act.filter((e) => (e.steps || {})[st]).length; });
     const totalBoxes = total * stages.length;
-    const filled = act.reduce((sum, e) => sum + stages.filter((st) => e.steps[st]).length, 0);
+    const filled = act.reduce((sum, e) => sum + stages.filter((st) => (e.steps || {})[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
     return { total, present, confirmed, attPct: total ? Math.round(present/total*100) : 0, complete, byStage, progPct };
   }, [students, stages, date]);
@@ -204,7 +204,7 @@ export default function LOFDashboard() {
     const act = students.filter((e) => e.active !== false);
     const total = act.length || 1;
     return weeks.map((iso) => {
-      const present = act.filter((e) => e.attendance[iso]).length;
+      const present = act.filter((e) => (e.attendance || {})[iso]).length;
       return { iso, present, pct: Math.round((present / total) * 100) };
     });
   }, [students]);
@@ -428,7 +428,7 @@ function WeeksView({ students, coaches }) {
   const rows = coaches.map((c) => {
     const group = act.filter((e) => e.coach === c);
     const total = group.length;
-    const present = group.filter((e) => e.attendance[iso]).length;
+    const present = group.filter((e) => (e.attendance || {})[iso]).length;
     const pct = total ? Math.round((present / total) * 100) : 0;
     return { coach: c, present, total, pct };
   });
@@ -517,7 +517,7 @@ function SearchView({ results, stages, date, onCoach }) {
       {results.length === 0 && <div style={S.empty}>No students found. Try another name, FFG or phone.</div>}
       <div style={S.list}>
         {results.map((e) => {
-          const done = stages.filter((st) => e.steps[st]).length;
+          const done = stages.filter((st) => (e.steps || {})[st]).length;
           const present = !!e.attendance[date];
           return (
             <div key={e.id} style={S.card}>
@@ -571,7 +571,7 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
         {students
           .filter((e) => !(presentOnly && tab === "checkin") || e.attendance[date])
           .map((e) => {
-          const done = stages.filter((st) => e.steps[st]).length;
+          const done = stages.filter((st) => (e.steps || {})[st]).length;
           const present = !!e.attendance[date];
           const inactive = e.active === false;
           return (
@@ -593,7 +593,7 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
               {tab === "progress" && !inactive && (
                 <div style={S.steps}>
                   {stages.map((st) => {
-                    const on = !!e.steps[st];
+                    const on = !!(e.steps || {})[st];
                     return (
                       <button key={st} onClick={() => toggleStep(e.id, st)} style={{ ...S.step, ...(on ? S.stepOn : {}) }}>
                         <span style={{ ...S.check, ...(on ? S.checkOn : {}) }}>{on ? "\u2713" : ""}</span>
