@@ -49,6 +49,22 @@ function lastWeeks(n) {
   for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i * 7); arr.push(isoOf(d)); }
   return arr;
 }
+// Sunday ISO date for a given course week number (1-based)
+function weekDateISO(weekNum) {
+  const [y, m, d] = COURSE_START.split("-").map(Number);
+  const start = new Date(y, m - 1, d);
+  start.setDate(start.getDate() + (weekNum - 1) * 7);
+  return isoOf(start);
+}
+// Which course week is "today" closest to (1..COURSE_WEEKS), for default selection
+function currentWeekNum() {
+  const [y, m, d] = COURSE_START.split("-").map(Number);
+  const start = new Date(y, m - 1, d);
+  const now = new Date();
+  const diffDays = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  const wk = Math.floor(diffDays / 7) + 1;
+  return Math.min(Math.max(wk, 1), COURSE_WEEKS);
+}
 
 // ============================================================
 //  App
@@ -229,6 +245,7 @@ export default function LOFDashboard() {
   }
 
   const inOverview = coachSel === "Overview";
+  const inWeeks = coachSel === "Weeks";
 
   return (
     <div style={S.shell}>
@@ -246,6 +263,11 @@ export default function LOFDashboard() {
         <button style={{ ...S.navItem, ...(inOverview ? S.navItemOn : {}) }}
           onClick={() => { setCoachSel("Overview"); setSidebarOpen(false); }}>
           <span style={S.navIcon}>&#9638;</span> Overview
+        </button>
+
+        <button style={{ ...S.navItem, ...(coachSel === "Weeks" ? S.navItemOn : {}) }}
+          onClick={() => { setCoachSel("Weeks"); setSidebarOpen(false); }}>
+          <span style={S.navIcon}>&#128197;</span> Weeks
         </button>
 
         <div style={S.navLabel}>{coaches.length} COACHES</div>
@@ -269,7 +291,7 @@ export default function LOFDashboard() {
         <div style={S.topbar}>
           <button className="lof-burger" style={S.burger} onClick={() => setSidebarOpen(true)}>&#9776;</button>
           <div>
-            <h1 style={S.h1}>{inOverview ? "Dashboard" : coachSel}</h1>
+            <h1 style={S.h1}>{inOverview ? "Dashboard" : inWeeks ? "Weekly attendance" : coachSel}</h1>
             <div style={S.live}><span style={S.liveDot} /> Live</div>
           </div>
           <div style={S.topRight}>
@@ -291,6 +313,8 @@ export default function LOFDashboard() {
 
         {search.trim() ? (
           <SearchView results={searchResults} stages={stages} date={date} onCoach={(c) => { setCoachSel(c); setSearch(""); }} />
+        ) : inWeeks ? (
+          <WeeksView students={students} coaches={coaches} />
         ) : inOverview ? (
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages} date={date} history={history} onCoach={setCoachSel} />
         ) : (
@@ -821,6 +845,18 @@ const S = {
   progress: { fontSize: 13, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "4px 12px" },
   attBtn: { border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   attOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
+  // Weeks view
+  weekBar: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  weekChip: { width: 44, height: 44, borderRadius: 12, border: "1px solid " + LINE, background: PANEL, color: MUTE, fontSize: 15, fontWeight: 700, cursor: "pointer", flexShrink: 0 },
+  weekChipOn: { background: GOLD, borderColor: GOLD, color: "#000" },
+  weekMeta: { fontSize: 13, color: MUTE, marginBottom: 20 },
+  weekTotalCard: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, #16304d22, " + PANEL + ")", border: "1px solid rgba(200,162,75,0.35)", borderRadius: 18, padding: "20px 24px", marginBottom: 22 },
+  weekTotalLabel: { fontSize: 12.5, color: MUTE, fontWeight: 600 },
+  weekTotalValue: { fontSize: 46, fontWeight: 800, letterSpacing: "-2px", color: "#6ee7a8", lineHeight: 1, marginTop: 6 },
+  weekTotalOf: { fontSize: 24, color: MUTE, fontWeight: 700 },
+  weekTotalPct: { fontSize: 40, fontWeight: 800, color: GOLD, letterSpacing: "-1px" },
+  weekTotalRow: { background: "rgba(200,162,75,0.08)" },
+
   filterBtn: { border: "1px solid " + LINE, background: "transparent", color: MUTE, borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   filterBtnOn: { background: "#173d2b", borderColor: "#2e6b4a", color: "#6ee7a8" },
   steps: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
