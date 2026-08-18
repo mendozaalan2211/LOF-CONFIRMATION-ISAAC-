@@ -772,7 +772,6 @@ function CoachView({ coach, students, stats, stages, date, sunday, toggleStep, t
           <button style={{ ...S.tab, ...(tab === "checkin" ? S.tabOn : {}) }} onClick={() => setTab("checkin")}>{t("checkin")}</button>
           <button style={{ ...S.tab, ...(tab === "progress" ? S.tabOn : {}) }} onClick={() => setTab("progress")}>{t("progress")}</button>
         </div>
-        {tab === "checkin" && <div style={S.weekTag}>{prettyDate(sunday)}</div>}
       </div>
 
       {students.length === 0 && <div style={S.empty}>{t("noStudents")}</div>}
