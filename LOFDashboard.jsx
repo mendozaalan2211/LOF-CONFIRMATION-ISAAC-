@@ -90,6 +90,7 @@ const T = {
     didAttend: "Asistió", noShow: "Confirmaron y no llegaron", kept: "Cumplimiento",
     keptHelp: "de los que confirmaron, cuántos vinieron", vsLastWeek: "vs semana pasada",
     confVsPres: "Confirmados vs presentes",
+    byStageTitle: "Estudiantes por etapa del discipulado",
     search: "Buscar estudiante, coach, FFG o teléfono...",
     coachBreakdown: "Desglose por coach", rankedByAtt: "ordenado por asistencia",
     tapCoach: "Toca un coach para ver y editar sus estudiantes.",
@@ -129,6 +130,7 @@ const T = {
     didAttend: "Attended", noShow: "Confirmed but didn't show", kept: "Kept rate",
     keptHelp: "of those who confirmed, how many came", vsLastWeek: "vs last week",
     confVsPres: "Confirmed vs present",
+    byStageTitle: "Students by discipleship stage",
     search: "Search student, coach, FFG or phone...",
     coachBreakdown: "Coach breakdown", rankedByAtt: "ranked by attendance",
     tapCoach: "Tap a coach to view and edit their students.",
@@ -562,6 +564,22 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, sunday, onCoa
         <Kpi value={totals.noShow} label={t("noShow")} accent={totals.noShow > 0 ? "#d99a6b" : MUTE} />
       </div>
 
+      {/* Contadores por etapa del discipulado */}
+      <div style={S.stageCountHead}>{t("byStageTitle")}</div>
+      <div className="lof-stagecounts" style={S.stageCounts}>
+        {stages.map((st) => {
+          const n = totals.byStage[st] || 0;
+          const pct = totals.total ? Math.round((n / totals.total) * 100) : 0;
+          return (
+            <div key={st} style={S.stageCount}>
+              <div style={S.stageCountN}>{n}<span style={S.stageCountOf}> / {totals.total}</span></div>
+              <div style={S.stageCountName}>{st}</div>
+              <div style={S.stageCountTrack}><div style={{ ...S.stageCountFill, width: pct + "%" }} /></div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Desglose por coach */}
       <div style={S.tableCard}>
         <div style={S.tableHead}>
@@ -577,6 +595,7 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, sunday, onCoa
               <tr>
                 <th style={{ ...S.th, ...S.thLeft }}>{t("coach")}</th>
                 <th style={S.th}>{t("students")}</th>
+                {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
                 <th style={S.th}>{t("confirmedPl")}</th>
                 <th style={S.th}>{t("presentPl")}</th>
                 <th style={S.th}>{t("kept")}</th>
@@ -589,6 +608,9 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, sunday, onCoa
                 <tr key={c} style={S.tr} onClick={() => onCoach(c)}>
                   <td style={{ ...S.td, ...S.tdName }}>{c}</td>
                   <td style={{ ...S.td, fontWeight: 700 }}>{s.total}</td>
+                  {stages.map((st) => (
+                    <td key={st} style={{ ...S.td, color: s.byStage[st] ? GOLD : MUTE }}>{s.byStage[st]}</td>
+                  ))}
                   <td style={{ ...S.td, color: s.confirmed ? GOLD : MUTE, fontWeight: 700 }}>{s.confirmed}</td>
                   <td style={{ ...S.td, color: s.present ? SAGE : MUTE, fontWeight: 700 }}>{s.present}</td>
                   <td style={{ ...S.td, color: s.confirmed ? pctColor(s.keptPct) : MUTE }}>{s.confirmed ? s.keptPct + "%" : "—"}</td>
@@ -1097,6 +1119,7 @@ const CSS = "* { box-sizing: border-box; margin: 0; padding: 0; }"
   + "   .lof-sidebar.open { transform: translateX(0); }"
   + "   .lof-burger { display: flex !important; }"
   + "   .lof-kpis { grid-template-columns: 1fr 1fr !important; }"
+  + "   .lof-stagecounts { grid-template-columns: 1fr 1fr !important; }"
   + "   .lof-main { padding: 18px 16px 60px !important; }"
   + " }"
   + " @media (max-width: 520px) { .lof-kpis { grid-template-columns: 1fr 1fr !important; } .lof-formgrid { grid-template-columns: 1fr !important; } }";
@@ -1178,6 +1201,16 @@ const S = {
   kpiValue: { fontSize: 40, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-1.5px", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
   kpiLabel: { fontSize: 12.5, color: MUTE, marginTop: 8 },
 
+  // Contadores por etapa
+  stageCountHead: { fontSize: 10.5, color: MUTE, fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase", margin: "2px 2px 12px" },
+  stageCounts: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 22 },
+  stageCount: { background: PANEL, border: "1px solid " + LINE, borderRadius: 18, padding: "20px 22px" },
+  stageCountN: { fontSize: 38, fontWeight: 800, fontFamily: DISPLAY, color: GOLD, letterSpacing: "-1.5px", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
+  stageCountOf: { fontSize: 15, color: MUTE, fontWeight: 400 },
+  stageCountName: { fontSize: 12.5, color: TXT, fontWeight: 600, marginTop: 8, marginBottom: 12 },
+  stageCountTrack: { height: 5, background: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" },
+  stageCountFill: { height: "100%", background: GOLD, borderRadius: 999, transition: "width .5s ease" },
+
   // Attention card
   weekTag: { fontSize: 12.5, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "7px 15px" },
 
@@ -1188,7 +1221,7 @@ const S = {
   tableSub: { fontSize: 12.5, color: MUTE },
   exportBtn: { border: "1px solid " + LINE_2, background: "transparent", color: TXT, borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   tableScroll: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 720 },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: 920 },
   th: { fontSize: 10.5, fontWeight: 700, color: "rgba(240,238,232,0.6)", textAlign: "center", padding: "12px 10px", borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: "0.6px" },
   thLeft: { textAlign: "left", paddingLeft: 22 },
   tr: { cursor: "pointer", transition: "background .1s" },
