@@ -181,7 +181,7 @@ export default function LOFDashboard() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [connError, setConnError] = useState(false);
-  const [lang, setLang] = useState("es");
+  const [lang, setLang] = useState("en");
   const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
@@ -345,13 +345,13 @@ export default function LOFDashboard() {
 
   function exportCSV() {
     if (!students || !stages) return;
-    const head = ["Nombre", "Coach", "Teléfono", "Edad", "FFG", "Activo",
-      "Confirmó (" + sunday + ")", "Asistió (" + sunday + ")", ...stages, "Notas"];
+    const head = ["Name", "Coach", "Phone", "Age", "FFG", "Active",
+      "Confirmed (" + sunday + ")", "Attended (" + sunday + ")", ...stages, "Notes"];
     const rows = students.map((e) => [
       e.name, e.coach, e.phone || "", e.age === "" || e.age == null ? "" : e.age,
-      e.ffg || "", e.active === false ? "No" : "Sí",
-      (e.confirmed || {})[sunday] ? "Sí" : "", (e.attendance || {})[sunday] ? "Sí" : "",
-      ...stages.map((st) => (e.steps || {})[st] ? "Sí" : ""),
+      e.ffg || "", e.active === false ? "No" : "Yes",
+      (e.confirmed || {})[sunday] ? "Yes" : "", (e.attendance || {})[sunday] ? "Yes" : "",
+      ...stages.map((st) => (e.steps || {})[st] ? "Yes" : ""),
       (e.note || "").replace(/[\r\n]+/g, " "),
     ]);
     const esc = (v) => '"' + String(v).replace(/"/g, '""') + '"';
@@ -359,7 +359,7 @@ export default function LOFDashboard() {
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "freedom-estudiantes-" + todayISO() + ".csv";
+    a.href = url; a.download = "panel-lof-students-" + todayISO() + ".csv";
     a.click(); URL.revokeObjectURL(url);
   }
 
@@ -400,7 +400,7 @@ export default function LOFDashboard() {
           <div style={S.mark}>F</div>
           <div>
             <div style={S.brandTitle}>Panel LOF</div>
-            <div style={S.brandSub}>Coaches · Discipulado</div>
+            <div style={S.brandSub}>Coaches · Discipleship</div>
           </div>
         </div>
 
@@ -445,10 +445,6 @@ export default function LOFDashboard() {
             <div style={S.live}><span style={S.liveDot} /> {t("live")}</div>
           </div>
           <div style={S.topRight}>
-            <div style={S.langToggle}>
-              <button style={{ ...S.langBtn, ...(lang === "es" ? S.langOn : {}) }} onClick={() => setLang("es")}>ES</button>
-              <button style={{ ...S.langBtn, ...(lang === "en" ? S.langOn : {}) }} onClick={() => setLang("en")}>EN</button>
-            </div>
             <input type="date" style={S.date} value={date} onChange={(e) => setDate(e.target.value)} />
             <div style={S.saveState}>
               {saving ? <span style={S.saving}>{t("saving")}</span>
@@ -1078,7 +1074,7 @@ function pctColor(p) {
 }
 function prettyDate(iso) {
   const [y, m, d] = iso.split("-");
-  const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   return months[parseInt(m)-1] + " " + parseInt(d);
 }
 
