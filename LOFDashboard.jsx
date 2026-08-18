@@ -3,7 +3,7 @@ import { supabase, supabaseConfigured } from "./supabaseClient.js";
 import { SEED_STUDENTS, SEED_COACHES, DEFAULT_STAGES } from "./seedData.js";
 
 // ============================================================
-//  FREEDOM EN ESPAÑOL — Panel de Coaches (rediseño)
+//  PANEL LOF — Coaches (rediseño)
 //  Lifestyle of Freedom
 //
 //  Datos compartidos en vivo vía Supabase (tabla app_state,
@@ -53,6 +53,18 @@ function currentWeekNum() {
   const wk = Math.floor(diffDays / 7) + 1;
   return Math.min(Math.max(wk, 1), COURSE_WEEKS);
 }
+// Dada una fecha ISO cualquiera, ¿a qué domingo-del-programa pertenece esa semana?
+// (confirmación y asistencia se guardan siempre en la fecha del domingo)
+function programSundayFor(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(y, m - 1, d);
+  const [sy, sm, sd] = COURSE_START.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const diffDays = Math.floor((target - start) / (1000 * 60 * 60 * 24));
+  let wk = Math.floor(diffDays / 7);
+  wk = Math.min(Math.max(wk, 0), COURSE_WEEKS - 1);
+  return weekDateISO(wk + 1);
+}
 // Todas las fechas-domingo del programa hasta hoy (para historial/rachas)
 function courseWeeksSoFar() {
   const arr = [];
@@ -73,8 +85,12 @@ const T = {
     dashboard: "Panel general", weeklyAtt: "Asistencia semanal", live: "En vivo",
     ministryProgress: "Progreso del ministerio", ofStudents: "de {n} estudiantes completos",
     students: "Estudiantes", presentToday: "Presentes hoy", attendance: "Asistencia",
-    complete: "Completos", needAttention: "Necesitan atención",
-    absentWeeks: "ausente {n}+ semanas", search: "Buscar estudiante, coach, FFG o teléfono...",
+    complete: "Completos",
+    confirmedPl: "Confirmados", presentPl: "Presentes", confirm: "Confirmar", confirmedShort: "Confirmó",
+    didAttend: "Asistió", noShow: "Confirmaron y no llegaron", kept: "Cumplimiento",
+    keptHelp: "de los que confirmaron, cuántos vinieron", vsLastWeek: "vs semana pasada",
+    confVsPres: "Confirmados vs presentes",
+    search: "Buscar estudiante, coach, FFG o teléfono...",
     coachBreakdown: "Desglose por coach", rankedByAtt: "ordenado por asistencia",
     tapCoach: "Toca un coach para ver y editar sus estudiantes.",
     present: "Presente", markPresent: "Marcar presente", presentOnly: "Solo presentes",
@@ -108,8 +124,12 @@ const T = {
     dashboard: "Dashboard", weeklyAtt: "Weekly attendance", live: "Live",
     ministryProgress: "Ministry progress", ofStudents: "of {n} students fully complete",
     students: "Students", presentToday: "Present today", attendance: "Attendance",
-    complete: "Complete", needAttention: "Need attention",
-    absentWeeks: "absent {n}+ weeks", search: "Search student, coach, FFG or phone...",
+    complete: "Complete",
+    confirmedPl: "Confirmed", presentPl: "Present", confirm: "Confirm", confirmedShort: "Confirmed",
+    didAttend: "Attended", noShow: "Confirmed but didn't show", kept: "Kept rate",
+    keptHelp: "of those who confirmed, how many came", vsLastWeek: "vs last week",
+    confVsPres: "Confirmed vs present",
+    search: "Search student, coach, FFG or phone...",
     coachBreakdown: "Coach breakdown", rankedByAtt: "ranked by attendance",
     tapCoach: "Tap a coach to view and edit their students.",
     present: "Present", markPresent: "Mark present", presentOnly: "Present only",
@@ -202,14 +222,22 @@ export default function LOFDashboard() {
     if (good) { setOk(true); setTimeout(() => setOk(false), 1200); }
   }
 
+  const sunday = programSundayFor(date); // domingo del programa para la fecha elegida
+
   function toggleStep(id, step) {
     persist(students.map((e) => e.id === id ? { ...e, steps: { ...(e.steps || {}), [step]: !(e.steps || {})[step] } } : e));
   }
   function toggleAttendance(id) {
-    persist(students.map((e) => e.id === id ? { ...e, attendance: { ...(e.attendance || {}), [date]: !(e.attendance || {})[date] } } : e));
+    persist(students.map((e) => e.id === id ? { ...e, attendance: { ...(e.attendance || {}), [sunday]: !(e.attendance || {})[sunday] } } : e));
   }
   function toggleAttendanceOn(id, iso) {
     persist(students.map((e) => e.id === id ? { ...e, attendance: { ...(e.attendance || {}), [iso]: !(e.attendance || {})[iso] } } : e));
+  }
+  function toggleConfirmed(id) {
+    persist(students.map((e) => e.id === id ? { ...e, confirmed: { ...(e.confirmed || {}), [sunday]: !(e.confirmed || {})[sunday] } } : e));
+  }
+  function toggleConfirmedOn(id, iso) {
+    persist(students.map((e) => e.id === id ? { ...e, confirmed: { ...(e.confirmed || {}), [iso]: !(e.confirmed || {})[iso] } } : e));
   }
   function saveNote(id, note) {
     persist(students.map((e) => e.id === id ? { ...e, note } : e));
@@ -247,52 +275,57 @@ export default function LOFDashboard() {
     return Array.from(new Set([...SEED_COACHES, ...students.map((e) => e.coach)]));
   }, [students]);
 
+  // domingo anterior al seleccionado, para tendencia
+  const prevSunday = useMemo(() => {
+    const cur = courseWeeksSoFar().findIndex((w) => w.iso === sunday);
+    const all = [];
+    for (let w = 1; w <= COURSE_WEEKS; w++) all.push(weekDateISO(w));
+    const idx = all.indexOf(sunday);
+    return idx > 0 ? all[idx - 1] : null;
+  }, [sunday]);
+
   function statsCoach(coach) {
     const group = students.filter((e) => e.coach === coach && e.active !== false);
     const total = group.length;
-    const present = group.filter((e) => (e.attendance || {})[date]).length;
+    const confirmed = group.filter((e) => (e.confirmed || {})[sunday]).length;
+    const present = group.filter((e) => (e.attendance || {})[sunday]).length;
     const attPct = total ? Math.round((present / total) * 100) : 0;
+    const confPct = total ? Math.round((confirmed / total) * 100) : 0;
+    // de los que confirmaron, cuántos vinieron (confiabilidad)
+    const keptPct = confirmed ? Math.round((group.filter((e) => (e.confirmed || {})[sunday] && (e.attendance || {})[sunday]).length / confirmed) * 100) : 0;
+    // confirmaron y NO vinieron
+    const noShow = group.filter((e) => (e.confirmed || {})[sunday] && !(e.attendance || {})[sunday]).length;
+    // tendencia: presentes de esta semana vs anterior
+    const prevPresent = prevSunday ? group.filter((e) => (e.attendance || {})[prevSunday]).length : null;
+    const trend = prevPresent == null ? 0 : present - prevPresent;
     const byStage = {};
     stages.forEach((st) => { byStage[st] = group.filter((e) => (e.steps || {})[st]).length; });
     const complete = group.filter((e) => stages.length > 0 && stages.every((st) => (e.steps || {})[st])).length;
     const totalBoxes = total * stages.length;
     const filled = group.reduce((sum, e) => sum + stages.filter((st) => (e.steps || {})[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
-    return { total, present, attPct, byStage, complete, progPct };
+    return { total, confirmed, present, attPct, confPct, keptPct, noShow, trend, byStage, complete, progPct };
   }
 
   const totals = useMemo(() => {
     if (!students || !stages) return null;
     const act = students.filter((e) => e.active !== false);
     const total = act.length;
-    const present = act.filter((e) => (e.attendance || {})[date]).length;
+    const confirmed = act.filter((e) => (e.confirmed || {})[sunday]).length;
+    const present = act.filter((e) => (e.attendance || {})[sunday]).length;
+    const keptPct = confirmed ? Math.round((act.filter((e) => (e.confirmed || {})[sunday] && (e.attendance || {})[sunday]).length / confirmed) * 100) : 0;
+    const noShow = act.filter((e) => (e.confirmed || {})[sunday] && !(e.attendance || {})[sunday]).length;
+    const prevPresent = prevSunday ? act.filter((e) => (e.attendance || {})[prevSunday]).length : null;
+    const trend = prevPresent == null ? 0 : present - prevPresent;
     const complete = act.filter((e) => stages.length > 0 && stages.every((st) => (e.steps || {})[st])).length;
     const byStage = {};
     stages.forEach((st) => { byStage[st] = act.filter((e) => (e.steps || {})[st]).length; });
     const totalBoxes = total * stages.length;
     const filled = act.reduce((sum, e) => sum + stages.filter((st) => (e.steps || {})[st]).length, 0);
     const progPct = totalBoxes ? Math.round((filled / totalBoxes) * 100) : 0;
-    return { total, present, attPct: total ? Math.round(present/total*100) : 0, complete, byStage, progPct };
-  }, [students, stages, date]);
-
-  // Estudiantes que necesitan atención: ausentes en las últimas 2+ semanas del programa
-  const needAttention = useMemo(() => {
-    if (!students) return [];
-    const weeks = courseWeeksSoFar().slice(-3); // últimas 3 semanas ocurridas
-    if (weeks.length < 2) return [];
-    const act = students.filter((e) => e.active !== false);
-    const flagged = [];
-    act.forEach((e) => {
-      // contar semanas seguidas ausentes desde la más reciente hacia atrás
-      let streakMissed = 0;
-      for (let i = weeks.length - 1; i >= 0; i--) {
-        if (!(e.attendance || {})[weeks[i].iso]) streakMissed++;
-        else break;
-      }
-      if (streakMissed >= 2) flagged.push({ student: e, missed: streakMissed });
-    });
-    return flagged.sort((a, b) => b.missed - a.missed);
-  }, [students]);
+    return { total, confirmed, present, attPct: total ? Math.round(present/total*100) : 0,
+      confPct: total ? Math.round(confirmed/total*100) : 0, keptPct, noShow, trend, complete, byStage, progPct };
+  }, [students, stages, sunday, prevSunday]);
 
   const searchResults = useMemo(() => {
     if (!students || !search.trim()) return [];
@@ -310,10 +343,12 @@ export default function LOFDashboard() {
 
   function exportCSV() {
     if (!students || !stages) return;
-    const head = ["Nombre", "Coach", "Teléfono", "Edad", "FFG", "Activo", ...stages, "Notas"];
+    const head = ["Nombre", "Coach", "Teléfono", "Edad", "FFG", "Activo",
+      "Confirmó (" + sunday + ")", "Asistió (" + sunday + ")", ...stages, "Notas"];
     const rows = students.map((e) => [
       e.name, e.coach, e.phone || "", e.age === "" || e.age == null ? "" : e.age,
       e.ffg || "", e.active === false ? "No" : "Sí",
+      (e.confirmed || {})[sunday] ? "Sí" : "", (e.attendance || {})[sunday] ? "Sí" : "",
       ...stages.map((st) => (e.steps || {})[st] ? "Sí" : ""),
       (e.note || "").replace(/[\r\n]+/g, " "),
     ]);
@@ -362,8 +397,8 @@ export default function LOFDashboard() {
         <div style={S.brandRow}>
           <div style={S.mark}>F</div>
           <div>
-            <div style={S.brandTitle}>Freedom</div>
-            <div style={S.brandSub}>en Español · LOF</div>
+            <div style={S.brandTitle}>Panel LOF</div>
+            <div style={S.brandSub}>Coaches · Discipulado</div>
           </div>
         </div>
 
@@ -403,7 +438,7 @@ export default function LOFDashboard() {
         <div style={S.topbar}>
           <button className="lof-burger" style={S.burger} onClick={() => setSidebarOpen(true)}>☰</button>
           <div style={{ minWidth: 0 }}>
-            <div style={S.eyebrow}>{inOverview ? "FREEDOM EN ESPAÑOL" : inWeeks ? "PROGRAMA · 12 SEMANAS" : t("coach").toUpperCase()}</div>
+            <div style={S.eyebrow}>{inOverview ? "LIFESTYLE OF FREEDOM" : inWeeks ? "PROGRAMA · 12 SEMANAS" : t("coach").toUpperCase()}</div>
             <h1 style={S.h1}>{title}</h1>
             <div style={S.live}><span style={S.liveDot} /> {t("live")}</div>
           </div>
@@ -435,18 +470,19 @@ export default function LOFDashboard() {
           <WeeksView students={students} coaches={coaches} t={t} />
         ) : inOverview ? (
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages}
-            date={date} needAttention={needAttention} onCoach={setCoachSel} onExport={exportCSV}
+            date={date} sunday={sunday} onCoach={setCoachSel} onExport={exportCSV}
             onOpen={(id) => setDetailId(id)} t={t} />
         ) : (
           <CoachView coach={coachSel} students={students.filter((e) => e.coach === coachSel)}
-            stats={statsCoach(coachSel)} stages={stages} date={date} t={t}
-            toggleStep={toggleStep} toggleAttendance={toggleAttendance} onOpen={(id) => setDetailId(id)} />
+            stats={statsCoach(coachSel)} stages={stages} date={date} sunday={sunday} t={t}
+            toggleStep={toggleStep} toggleAttendance={toggleAttendance} toggleConfirmed={toggleConfirmed}
+            onOpen={(id) => setDetailId(id)} />
         )}
       </main>
 
       {detailStudent && (
-        <StudentDetailModal e={detailStudent} stages={stages} t={t}
-          onToggleStep={toggleStep} onToggleAtt={toggleAttendanceOn} onSaveNote={saveNote}
+        <StudentDetailModal e={detailStudent} stages={stages} t={t} sunday={sunday}
+          onToggleStep={toggleStep} onToggleAtt={toggleAttendanceOn} onToggleConf={toggleConfirmedOn} onSaveNote={saveNote}
           onClose={() => setDetailId(null)} onCoach={(c) => { setCoachSel(c); setDetailId(null); }} />
       )}
 
@@ -465,64 +501,65 @@ export default function LOFDashboard() {
 // ============================================================
 //  Overview
 // ============================================================
-function OverviewView({ totals, coaches, statsCoach, stages, date, needAttention, onCoach, onExport, onOpen, t }) {
+function OverviewView({ totals, coaches, statsCoach, stages, date, sunday, onCoach, onExport, onOpen, t }) {
   const rankedCoaches = coaches.map((c) => ({ c, s: statsCoach(c) })).sort((a, b) => b.s.attPct - a.s.attPct);
 
   return (
     <>
-      {/* Hero: progreso del ministerio como titular editorial */}
+      {/* Hero: la semana — confirmados vs presentes */}
       <div className="lof-hero" style={S.hero}>
         <div style={S.heroLeft}>
-          <div style={S.heroLabel}>{t("ministryProgress")}</div>
-          <div style={S.heroNum}>
-            {totals.progPct}<span style={S.heroPct}>%</span>
+          <div style={S.heroLabel}>{t("confVsPres")} · {prettyDate(sunday)}</div>
+          <div style={S.heroDuo}>
+            <div>
+              <div style={{ ...S.heroNum, fontSize: 64, color: GOLD }}>{totals.confirmed}</div>
+              <div style={S.heroDuoLabel}>{t("confirmedPl")}</div>
+            </div>
+            <div style={S.heroArrow}>→</div>
+            <div>
+              <div style={{ ...S.heroNum, fontSize: 64, color: SAGE }}>{totals.present}</div>
+              <div style={S.heroDuoLabel}>{t("presentPl")}</div>
+            </div>
           </div>
-          <div style={S.heroSub}>{totals.complete} {t("ofStudents", { n: totals.total })}</div>
-          <div style={S.heroBarTrack}><div style={{ ...S.heroBarFill, width: totals.progPct + "%" }} /></div>
+          <div style={S.heroSub}>
+            {totals.keptPct}% {t("kept").toLowerCase()}
+            {totals.trend !== 0 && (
+              <span style={{ color: totals.trend > 0 ? SAGE : "#d99a6b", marginLeft: 8 }}>
+                {totals.trend > 0 ? "▲" : "▼"} {Math.abs(totals.trend)} {t("vsLastWeek")}
+              </span>
+            )}
+          </div>
         </div>
         <div style={S.heroStages}>
-          {stages.map((st) => {
-            const pct = totals.total ? Math.round((totals.byStage[st] / totals.total) * 100) : 0;
-            return (
-              <div key={st} style={S.heroStage}>
-                <div style={S.heroStageTop}>
-                  <span style={S.heroStageName}>{st}</span>
-                  <span style={S.heroStageVal}>{totals.byStage[st]}<span style={S.heroStageOf}> / {totals.total}</span></span>
+          <div style={S.heroProgHead}>
+            <span style={S.heroLabel}>{t("ministryProgress")}</span>
+            <span style={{ ...S.heroStageVal, fontSize: 22 }}>{totals.progPct}%</span>
+          </div>
+          <div style={{ ...S.heroBarTrack, marginBottom: 4 }}><div style={{ ...S.heroBarFill, width: totals.progPct + "%" }} /></div>
+          <div style={{ ...S.heroSub, marginBottom: 14 }}>{totals.complete} {t("ofStudents", { n: totals.total })}</div>
+          <div style={S.heroStagesGrid}>
+            {stages.map((st) => {
+              const pct = totals.total ? Math.round((totals.byStage[st] / totals.total) * 100) : 0;
+              return (
+                <div key={st} style={S.heroStage}>
+                  <div style={S.heroStageTop}>
+                    <span style={S.heroStageName}>{st}</span>
+                    <span style={S.heroStageVal}>{totals.byStage[st]}<span style={S.heroStageOf}> / {totals.total}</span></span>
+                  </div>
+                  <div style={S.heroStageTrack}><div style={{ ...S.heroStageFill, width: pct + "%" }} /></div>
                 </div>
-                <div style={S.heroStageTrack}><div style={{ ...S.heroStageFill, width: pct + "%" }} /></div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* KPIs */}
       <div className="lof-kpis" style={S.kpis}>
-        <Kpi big value={totals.total} label={t("students")} />
-        <Kpi value={totals.present} label={t("presentToday")} accent={SAGE} />
-        <Kpi value={totals.attPct + "%"} label={t("attendance")} accent={GOLD} />
-        <Kpi value={totals.complete} label={t("fullyComplete")} accent={GOLD} />
-      </div>
-
-      {/* Necesitan atención */}
-      <div style={S.attentionCard}>
-        <div style={S.attentionHead}>
-          <span style={S.attentionTitle}>◐ {t("needAttention")}</span>
-          <span style={S.attentionCount}>{needAttention.length}</span>
-        </div>
-        {needAttention.length === 0 ? (
-          <div style={S.attentionEmpty}>{t("allGood")}</div>
-        ) : (
-          <div style={S.attentionList}>
-            {needAttention.slice(0, 8).map(({ student, missed }) => (
-              <button key={student.id} style={S.attentionRow} onClick={() => onOpen(student.id)}>
-                <span style={S.attentionName}>{student.name}</span>
-                <span style={S.attentionMeta}>{student.coach}</span>
-                <span style={S.attentionFlag}>{t("absentWeeks", { n: missed })}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <Kpi big value={totals.confirmed} label={t("confirmedPl")} accent={GOLD} />
+        <Kpi value={totals.present} label={t("presentPl")} accent={SAGE} />
+        <Kpi value={totals.keptPct + "%"} label={t("kept")} accent={pctColor(totals.keptPct)} />
+        <Kpi value={totals.noShow} label={t("noShow")} accent={totals.noShow > 0 ? "#d99a6b" : MUTE} />
       </div>
 
       {/* Desglose por coach */}
@@ -530,7 +567,7 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, needAttention
         <div style={S.tableHead}>
           <div>
             <span style={S.tableTitle}>{t("coachBreakdown")}</span>
-            <span style={S.tableSub}> · {prettyDate(date)} · {t("rankedByAtt")}</span>
+            <span style={S.tableSub}> · {prettyDate(sunday)} · {t("rankedByAtt")}</span>
           </div>
           <button style={S.exportBtn} onClick={onExport}>↓ {t("export")}</button>
         </div>
@@ -540,8 +577,9 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, needAttention
               <tr>
                 <th style={{ ...S.th, ...S.thLeft }}>{t("coach")}</th>
                 <th style={S.th}>{t("students")}</th>
-                {stages.map((st) => <th key={st} style={S.th}>{st}</th>)}
-                <th style={S.th}>{t("present")}</th>
+                <th style={S.th}>{t("confirmedPl")}</th>
+                <th style={S.th}>{t("presentPl")}</th>
+                <th style={S.th}>{t("kept")}</th>
                 <th style={S.th}>{t("attendance")}</th>
                 <th style={S.th}>{t("complete")}</th>
               </tr>
@@ -551,10 +589,9 @@ function OverviewView({ totals, coaches, statsCoach, stages, date, needAttention
                 <tr key={c} style={S.tr} onClick={() => onCoach(c)}>
                   <td style={{ ...S.td, ...S.tdName }}>{c}</td>
                   <td style={{ ...S.td, fontWeight: 700 }}>{s.total}</td>
-                  {stages.map((st) => (
-                    <td key={st} style={{ ...S.td, color: s.byStage[st] ? GOLD : MUTE }}>{s.byStage[st]}</td>
-                  ))}
-                  <td style={{ ...S.td, color: s.present ? SAGE : MUTE }}>{s.present}</td>
+                  <td style={{ ...S.td, color: s.confirmed ? GOLD : MUTE, fontWeight: 700 }}>{s.confirmed}</td>
+                  <td style={{ ...S.td, color: s.present ? SAGE : MUTE, fontWeight: 700 }}>{s.present}</td>
+                  <td style={{ ...S.td, color: s.confirmed ? pctColor(s.keptPct) : MUTE }}>{s.confirmed ? s.keptPct + "%" : "—"}</td>
                   <td style={{ ...S.td, color: pctColor(s.attPct), fontWeight: 700 }}>{s.attPct}%</td>
                   <td style={{ ...S.td, fontWeight: 700, color: s.complete ? SAGE : MUTE }}>{s.complete}</td>
                 </tr>
@@ -697,56 +734,61 @@ function SearchView({ results, stages, date, onCoach, onOpen, t }) {
 // ============================================================
 //  Coach view
 // ============================================================
-function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAttendance, onOpen, t }) {
-  const [tab, setTab] = useState("progress");
-  const [presentOnly, setPresentOnly] = useState(false);
+function CoachView({ coach, students, stats, stages, date, sunday, toggleStep, toggleAttendance, toggleConfirmed, onOpen, t }) {
+  const [tab, setTab] = useState("checkin");
   return (
     <>
       <div className="lof-kpis" style={S.coachStats}>
-        <Kpi value={stats.total} label={t("students")} />
-        <Kpi value={stats.present} label={t("present") + " · " + prettyDate(date)} accent={SAGE} />
+        <Kpi value={stats.confirmed} label={t("confirmedPl")} accent={GOLD} />
+        <Kpi value={stats.present} label={t("presentPl")} accent={SAGE} />
+        <Kpi value={stats.confirmed ? stats.keptPct + "%" : "—"} label={t("kept")} accent={stats.confirmed ? pctColor(stats.keptPct) : MUTE} />
         <Kpi value={stats.progPct + "%"} label={t("progress")} accent={GOLD} />
-        <Kpi value={stats.complete} label={t("complete")} accent={GOLD} />
       </div>
 
       <div style={S.tabsRow}>
         <div style={S.tabs}>
-          <button style={{ ...S.tab, ...(tab === "progress" ? S.tabOn : {}) }} onClick={() => setTab("progress")}>{t("progress")}</button>
           <button style={{ ...S.tab, ...(tab === "checkin" ? S.tabOn : {}) }} onClick={() => setTab("checkin")}>{t("checkin")}</button>
+          <button style={{ ...S.tab, ...(tab === "progress" ? S.tabOn : {}) }} onClick={() => setTab("progress")}>{t("progress")}</button>
         </div>
-        {tab === "checkin" && (
-          <button onClick={() => setPresentOnly(!presentOnly)}
-            style={{ ...S.filterBtn, ...(presentOnly ? S.filterBtnOn : {}) }}>
-            {presentOnly ? "✓ " + t("presentOnly") : t("showPresentOnly")}
-          </button>
-        )}
+        {tab === "checkin" && <div style={S.weekTag}>{prettyDate(sunday)}</div>}
       </div>
 
       {students.length === 0 && <div style={S.empty}>{t("noStudents")}</div>}
 
       <div style={S.list}>
-        {students
-          .filter((e) => !(presentOnly && tab === "checkin") || (e.attendance || {})[date])
-          .map((e) => {
+        {students.map((e) => {
           const done = stages.filter((st) => (e.steps || {})[st]).length;
-          const present = !!(e.attendance || {})[date];
+          const confirmed = !!(e.confirmed || {})[sunday];
+          const present = !!(e.attendance || {})[sunday];
           const inactive = e.active === false;
+          // señal: confirmó pero no ha llegado
+          const pending = confirmed && !present;
           return (
-            <div key={e.id} style={{ ...S.card, ...(inactive ? S.cardInactive : {}) }}>
+            <div key={e.id} style={{ ...S.card, ...(inactive ? S.cardInactive : {}), ...(pending ? S.cardPending : {}) }}>
               <div style={S.cardHead}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => onOpen(e.id)}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", minWidth: 0 }} onClick={() => onOpen(e.id)}>
                   <div style={S.name}>{e.name}</div>
                   {inactive && <span style={S.inactiveBadge}>{t("inactive")}</span>}
                 </div>
-                {inactive ? null : tab === "progress" ? (
+                {!inactive && tab === "progress" && (
                   <div style={S.progress} onClick={() => onOpen(e.id)}>{done}/{stages.length}</div>
-                ) : (
-                  <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn, ...(present ? S.attOn : {}) }}>
-                    {present ? "✓ " + t("present") : t("markPresent")}
-                  </button>
                 )}
               </div>
               <div onClick={() => onOpen(e.id)} style={{ cursor: "pointer" }}><StudentInfo e={e} t={t} /></div>
+
+              {tab === "checkin" && !inactive && (
+                <div style={S.checkRow}>
+                  <button onClick={() => toggleConfirmed(e.id)} style={{ ...S.confBtn, ...(confirmed ? S.confOn : {}) }}>
+                    <span style={{ ...S.check, ...(confirmed ? S.checkGold : {}) }}>{confirmed ? "✓" : ""}</span>
+                    {t("confirm")}
+                  </button>
+                  <button onClick={() => toggleAttendance(e.id)} style={{ ...S.attBtn2, ...(present ? S.attOn : {}) }}>
+                    <span style={{ ...S.check, ...(present ? S.checkSage : {}) }}>{present ? "✓" : ""}</span>
+                    {t("didAttend")}
+                  </button>
+                </div>
+              )}
+
               {tab === "progress" && !inactive && (
                 <div style={S.steps}>
                   {stages.map((st) => {
@@ -771,10 +813,11 @@ function CoachView({ coach, students, stats, stages, date, toggleStep, toggleAtt
 // ============================================================
 //  Student detail modal (nuevo: notas, historial, rachas)
 // ============================================================
-function StudentDetailModal({ e, stages, onToggleStep, onToggleAtt, onSaveNote, onClose, onCoach, t }) {
+function StudentDetailModal({ e, stages, sunday, onToggleStep, onToggleAtt, onToggleConf, onSaveNote, onClose, onCoach, t }) {
   const [note, setNote] = useState(e.note || "");
   const weeks = courseWeeksSoFar();
   const attended = weeks.filter((w) => (e.attendance || {})[w.iso]).length;
+  const confirmedCount = weeks.filter((w) => (e.confirmed || {})[w.iso]).length;
   // racha actual (semanas seguidas presente desde la más reciente)
   let streak = 0;
   for (let i = weeks.length - 1; i >= 0; i--) {
@@ -797,8 +840,8 @@ function StudentDetailModal({ e, stages, onToggleStep, onToggleAtt, onSaveNote, 
 
         <div style={S.detailStatRow}>
           <div style={S.detailStat}>
-            <div style={S.detailStatN}>{done}<span style={S.detailStatOf}>/{stages.length}</span></div>
-            <div style={S.detailStatL}>{t("progress")}</div>
+            <div style={{ ...S.detailStatN, color: GOLD }}>{confirmedCount}</div>
+            <div style={S.detailStatL}>{t("confirmedPl")}</div>
           </div>
           <div style={S.detailStat}>
             <div style={{ ...S.detailStatN, color: SAGE }}>{attended}</div>
@@ -824,15 +867,23 @@ function StudentDetailModal({ e, stages, onToggleStep, onToggleAtt, onSaveNote, 
         </div>
 
         <div style={S.adminSection}>{t("attHistory")}</div>
+        <div style={S.attLegend}>
+          <span><span style={{ ...S.legendDot, background: GOLD }} /> {t("confirmedShort")}</span>
+          <span><span style={{ ...S.legendDot, background: SAGE }} /> {t("didAttend")}</span>
+        </div>
         <div style={S.attGrid}>
           {weeks.map((w) => {
-            const on = !!(e.attendance || {})[w.iso];
+            const conf = !!(e.confirmed || {})[w.iso];
+            const att = !!(e.attendance || {})[w.iso];
+            const isCur = w.iso === sunday;
             return (
-              <button key={w.iso} onClick={() => onToggleAtt(e.id, w.iso)}
-                style={{ ...S.attCell, ...(on ? S.attCellOn : {}) }} title={prettyDate(w.iso)}>
+              <div key={w.iso} style={{ ...S.attCol, ...(isCur ? S.attColCur : {}) }} title={prettyDate(w.iso)}>
                 <span style={S.attCellW}>{w.w}</span>
-                <span style={S.attCellMark}>{on ? "✓" : "·"}</span>
-              </button>
+                <button onClick={() => onToggleConf(e.id, w.iso)}
+                  style={{ ...S.attMini, ...(conf ? S.attMiniGold : {}) }}>{conf ? "✓" : "·"}</button>
+                <button onClick={() => onToggleAtt(e.id, w.iso)}
+                  style={{ ...S.attMini, ...(att ? S.attMiniSage : {}) }}>{att ? "✓" : "·"}</button>
+              </div>
             );
           })}
         </div>
@@ -1024,7 +1075,7 @@ const LINE = "rgba(255,255,255,0.07)";
 const LINE_2 = "rgba(255,255,255,0.12)";
 const TXT = "#F0EEE8";        // texto marfil
 const MUTE = "rgba(240,238,232,0.48)";
-const DISPLAY = "'Fraunces', Georgia, serif";
+const DISPLAY = "'Inter', system-ui, -apple-system, sans-serif";
 const BODY = "'Inter', system-ui, -apple-system, sans-serif";
 
 const CSS = "* { box-sizing: border-box; margin: 0; padding: 0; }"
@@ -1060,7 +1111,7 @@ const S = {
   sidebar: { width: 258, background: SIDEBAR, borderRight: "1px solid " + LINE, padding: "24px 14px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 },
   brandRow: { display: "flex", alignItems: "center", gap: 12, padding: "0 6px 22px" },
   mark: { width: 44, height: 44, borderRadius: 13, background: "linear-gradient(140deg, " + GOLD + ", #9a7a30)", color: "#0B0B0C", fontWeight: 900, fontSize: 22, fontFamily: DISPLAY, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(201,162,75,0.25)" },
-  brandTitle: { fontSize: 17, fontWeight: 600, fontFamily: DISPLAY, letterSpacing: "-0.2px" },
+  brandTitle: { fontSize: 16, fontWeight: 700, fontFamily: DISPLAY, letterSpacing: "-0.2px" },
   brandSub: { fontSize: 11.5, color: MUTE, marginTop: 1, letterSpacing: "0.3px" },
   navItem: { display: "flex", alignItems: "center", gap: 10, width: "100%", border: "none", background: "transparent", color: MUTE, padding: "11px 12px", borderRadius: 10, fontSize: 13.5, fontWeight: 500, cursor: "pointer", textAlign: "left", marginBottom: 2 },
   navItemOn: { background: "#212124", color: TXT, fontWeight: 600 },
@@ -1077,7 +1128,7 @@ const S = {
   topbar: { display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 22, flexWrap: "wrap" },
   burger: { display: "none", border: "1px solid " + LINE_2, background: PANEL, color: TXT, width: 42, height: 42, borderRadius: 11, fontSize: 18, cursor: "pointer" },
   eyebrow: { fontSize: 10.5, color: GOLD, fontWeight: 700, letterSpacing: "1.6px", marginBottom: 4 },
-  h1: { fontSize: 34, fontWeight: 600, letterSpacing: "-1px", margin: "0 0 6px", fontFamily: DISPLAY, lineHeight: 1.05 },
+  h1: { fontSize: 32, fontWeight: 800, letterSpacing: "-1px", margin: "0 0 6px", fontFamily: DISPLAY, lineHeight: 1.05 },
   live: { display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: SAGE },
   liveDot: { width: 7, height: 7, borderRadius: 999, background: SAGE, animation: "pulse 1.4s infinite" },
   topRight: { marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
@@ -1101,16 +1152,21 @@ const S = {
   hero: { display: "grid", gridTemplateColumns: "300px 1fr", gap: 34, background: "linear-gradient(135deg, " + PANEL_2 + ", " + PANEL + ")", border: "1px solid " + LINE, borderRadius: 22, padding: "30px 32px", marginBottom: 22 },
   heroLeft: { borderRight: "1px solid " + LINE, paddingRight: 28 },
   heroLabel: { fontSize: 12, color: MUTE, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 6 },
-  heroNum: { fontSize: 88, fontWeight: 600, fontFamily: DISPLAY, color: GOLD, lineHeight: 0.9, letterSpacing: "-3px", margin: "8px 0 10px" },
+  heroNum: { fontSize: 84, fontWeight: 800, fontFamily: DISPLAY, color: GOLD, lineHeight: 0.9, letterSpacing: "-2px", margin: "2px 0 4px", fontVariantNumeric: "tabular-nums" },
   heroPct: { fontSize: 40, marginLeft: 2 },
   heroSub: { fontSize: 12.5, color: MUTE, marginBottom: 18 },
+  heroDuo: { display: "flex", alignItems: "center", gap: 18, margin: "6px 0 8px" },
+  heroDuoLabel: { fontSize: 11.5, color: MUTE, fontWeight: 600, marginTop: 2 },
+  heroArrow: { fontSize: 26, color: "rgba(240,238,232,0.3)", fontWeight: 300, marginBottom: 16 },
   heroBarTrack: { height: 8, background: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" },
   heroBarFill: { height: "100%", background: "linear-gradient(90deg, #9a7a30, " + GOLD + ")", borderRadius: 999, transition: "width .5s ease" },
-  heroStages: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 26px", alignContent: "center" },
+  heroStages: { display: "flex", flexDirection: "column", justifyContent: "center" },
+  heroProgHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 },
+  heroStagesGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 26px" },
   heroStage: {},
   heroStageTop: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 },
   heroStageName: { fontSize: 13, fontWeight: 600, color: TXT },
-  heroStageVal: { fontSize: 15, fontWeight: 700, color: GOLD, fontFamily: DISPLAY, fontVariantNumeric: "tabular-nums" },
+  heroStageVal: { fontSize: 15, fontWeight: 800, color: GOLD, fontFamily: DISPLAY, fontVariantNumeric: "tabular-nums" },
   heroStageOf: { fontSize: 12, color: MUTE, fontWeight: 400 },
   heroStageTrack: { height: 5, background: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" },
   heroStageFill: { height: "100%", background: GOLD, borderRadius: 999, transition: "width .5s ease" },
@@ -1119,25 +1175,16 @@ const S = {
   kpis: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 22 },
   kpi: { background: PANEL, border: "1px solid " + LINE, borderRadius: 18, padding: "22px 22px" },
   kpiBig: { background: "linear-gradient(135deg, " + PANEL_2 + ", " + PANEL + ")" },
-  kpiValue: { fontSize: 44, fontWeight: 600, fontFamily: DISPLAY, letterSpacing: "-1.5px", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
+  kpiValue: { fontSize: 40, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-1.5px", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
   kpiLabel: { fontSize: 12.5, color: MUTE, marginTop: 8 },
 
   // Attention card
-  attentionCard: { background: PANEL, border: "1px solid " + LINE, borderRadius: 18, padding: "20px 22px", marginBottom: 22 },
-  attentionHead: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14 },
-  attentionTitle: { fontSize: 15, fontWeight: 600, fontFamily: DISPLAY },
-  attentionCount: { fontSize: 12, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "3px 10px", fontVariantNumeric: "tabular-nums" },
-  attentionEmpty: { fontSize: 13.5, color: MUTE, padding: "4px 0" },
-  attentionList: { display: "flex", flexDirection: "column", gap: 8 },
-  attentionRow: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", background: PANEL_2, border: "1px solid " + LINE, borderRadius: 12, padding: "12px 14px", cursor: "pointer" },
-  attentionName: { fontSize: 14, fontWeight: 600, color: TXT, flexShrink: 0 },
-  attentionMeta: { fontSize: 12.5, color: MUTE, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  attentionFlag: { fontSize: 11.5, fontWeight: 700, color: "#d99a6b", background: "rgba(217,154,107,0.12)", border: "1px solid rgba(217,154,107,0.25)", borderRadius: 999, padding: "4px 11px", flexShrink: 0, whiteSpace: "nowrap" },
+  weekTag: { fontSize: 12.5, fontWeight: 700, color: GOLD, background: GOLD_SOFT, borderRadius: 999, padding: "7px 15px" },
 
   // Table
   tableCard: { background: PANEL, border: "1px solid " + LINE, borderRadius: 18, overflow: "hidden" },
   tableHead: { padding: "20px 22px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
-  tableTitle: { fontSize: 16, fontWeight: 600, fontFamily: DISPLAY },
+  tableTitle: { fontSize: 15.5, fontWeight: 700, fontFamily: DISPLAY },
   tableSub: { fontSize: 12.5, color: MUTE },
   exportBtn: { border: "1px solid " + LINE_2, background: "transparent", color: TXT, borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   tableScroll: { overflowX: "auto" },
@@ -1171,12 +1218,20 @@ const S = {
   presentTag: { fontSize: 12, fontWeight: 600, color: SAGE, background: "rgba(127,176,138,0.14)", borderRadius: 999, padding: "4px 11px", whiteSpace: "nowrap" },
   attBtn: { border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 999, padding: "9px 17px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   attOn: { background: "rgba(127,176,138,0.16)", borderColor: "rgba(127,176,138,0.45)", color: SAGE },
+  // dos botones (confirmar + asistió)
+  checkRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginTop: 14 },
+  confBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9, border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 12, padding: "12px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", transition: "all .12s ease" },
+  confOn: { borderColor: "rgba(201,162,75,0.55)", background: GOLD_SOFT, color: GOLD },
+  attBtn2: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9, border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 12, padding: "12px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", transition: "all .12s ease" },
+  checkGold: { background: GOLD, borderColor: GOLD },
+  checkSage: { background: SAGE, borderColor: SAGE },
+  cardPending: { borderColor: "rgba(201,162,75,0.35)", background: "linear-gradient(135deg, rgba(201,162,75,0.05), " + PANEL + ")" },
   infoRow: { display: "flex", flexWrap: "wrap", gap: 7, marginTop: 13 },
   infoChip: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: MUTE, background: PANEL_2, border: "1px solid " + LINE, borderRadius: 8, padding: "5px 11px" },
   steps: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
   step: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 10, padding: "8px 13px", fontSize: 13, cursor: "pointer", transition: "all .12s ease" },
   stepOn: { borderColor: "rgba(201,162,75,0.5)", background: GOLD_SOFT, color: TXT },
-  check: { width: 16, height: 16, borderRadius: 5, border: "1.5px solid " + MUTE, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#0B0B0C" },
+  check: { width: 17, height: 17, borderRadius: 5, border: "1.5px solid " + MUTE, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#0B0B0C", flexShrink: 0 },
   checkOn: { background: GOLD, borderColor: GOLD },
   cardInactive: { opacity: 0.5 },
   inactiveBadge: { fontSize: 10.5, fontWeight: 700, color: MUTE, background: "rgba(255,255,255,0.06)", border: "1px solid " + LINE, borderRadius: 999, padding: "3px 9px", textTransform: "uppercase", letterSpacing: "0.4px" },
@@ -1188,30 +1243,34 @@ const S = {
   weekMeta: { fontSize: 13, color: MUTE, marginBottom: 20 },
   weekTotalCard: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, " + PANEL_2 + ", " + PANEL + ")", border: "1px solid rgba(201,162,75,0.3)", borderRadius: 20, padding: "24px 28px", marginBottom: 22 },
   weekTotalLabel: { fontSize: 12.5, color: MUTE, fontWeight: 600 },
-  weekTotalValue: { fontSize: 52, fontWeight: 600, fontFamily: DISPLAY, letterSpacing: "-2px", color: SAGE, lineHeight: 1, marginTop: 6, fontVariantNumeric: "tabular-nums" },
+  weekTotalValue: { fontSize: 48, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-2px", color: SAGE, lineHeight: 1, marginTop: 6, fontVariantNumeric: "tabular-nums" },
   weekTotalOf: { fontSize: 26, color: MUTE, fontWeight: 400 },
-  weekTotalPct: { fontSize: 46, fontWeight: 600, color: GOLD, letterSpacing: "-1px", fontFamily: DISPLAY, fontVariantNumeric: "tabular-nums" },
+  weekTotalPct: { fontSize: 44, fontWeight: 800, color: GOLD, letterSpacing: "-1px", fontFamily: DISPLAY, fontVariantNumeric: "tabular-nums" },
   weekTotalRow: { background: "rgba(201,162,75,0.07)" },
 
   // Modals
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20, backdropFilter: "blur(3px)" },
   modal: { background: PANEL, border: "1px solid " + LINE_2, borderRadius: 22, width: "100%", maxWidth: 500, padding: 26, animation: "fadein .2s ease", maxHeight: "90vh", overflowY: "auto" },
   modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 12 },
-  modalTitle: { fontSize: 22, fontWeight: 600, fontFamily: DISPLAY, letterSpacing: "-0.5px", lineHeight: 1.1 },
+  modalTitle: { fontSize: 21, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-0.5px", lineHeight: 1.1 },
   modalSub: { fontSize: 12.5, color: MUTE, marginTop: 3 },
   close: { border: "none", background: "transparent", color: MUTE, fontSize: 28, cursor: "pointer", lineHeight: 1, flexShrink: 0 },
 
   // Detail modal
   detailStatRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, margin: "18px 0 4px" },
   detailStat: { background: PANEL_2, border: "1px solid " + LINE, borderRadius: 14, padding: "14px 12px", textAlign: "center" },
-  detailStatN: { fontSize: 26, fontWeight: 600, fontFamily: DISPLAY, letterSpacing: "-1px", color: GOLD, fontVariantNumeric: "tabular-nums" },
+  detailStatN: { fontSize: 26, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-1px", color: GOLD, fontVariantNumeric: "tabular-nums" },
   detailStatOf: { fontSize: 15, color: MUTE, fontWeight: 400 },
   detailStatL: { fontSize: 11, color: MUTE, marginTop: 4 },
-  attGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 7 },
-  attCell: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 10, padding: "9px 0", cursor: "pointer" },
-  attCellOn: { background: "rgba(127,176,138,0.16)", borderColor: "rgba(127,176,138,0.45)", color: SAGE },
-  attCellW: { fontSize: 10.5, fontWeight: 700, opacity: 0.7 },
-  attCellMark: { fontSize: 15, fontWeight: 700, lineHeight: 1 },
+  attLegend: { display: "flex", gap: 16, fontSize: 11.5, color: MUTE, marginBottom: 10 },
+  legendDot: { display: "inline-block", width: 9, height: 9, borderRadius: 3, marginRight: 5, verticalAlign: "middle" },
+  attGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 },
+  attCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, border: "1px solid " + LINE, borderRadius: 10, padding: "8px 0 7px" },
+  attColCur: { borderColor: "rgba(201,162,75,0.5)", background: "rgba(201,162,75,0.06)" },
+  attCellW: { fontSize: 10.5, fontWeight: 700, opacity: 0.6 },
+  attMini: { width: 26, height: 22, border: "1px solid " + LINE_2, background: "transparent", color: MUTE, borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: "pointer", lineHeight: 1, padding: 0 },
+  attMiniGold: { background: GOLD, borderColor: GOLD, color: "#0B0B0C" },
+  attMiniSage: { background: SAGE, borderColor: SAGE, color: "#0B0B0C" },
   noteArea: { width: "100%", background: PANEL_2, border: "1px solid " + LINE_2, borderRadius: 12, padding: "12px 14px", color: TXT, fontSize: 13.5, fontFamily: BODY, resize: "vertical", lineHeight: 1.5 },
 
   // PIN
