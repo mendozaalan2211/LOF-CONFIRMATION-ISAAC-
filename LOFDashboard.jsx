@@ -76,6 +76,17 @@ function courseWeeksSoFar() {
   return arr;
 }
 
+// Detecta cuál de las etapas es la del evento social (BBQ/Beach/Hiking).
+// Busca por palabras clave para que funcione aunque el nombre cambie un poco.
+function findSocialStage(stages) {
+  if (!stages) return null;
+  const keys = ["social", "bbq", "beach", "hiking", "hike"];
+  return stages.find((st) => {
+    const low = st.toLowerCase();
+    return keys.some((k) => low.includes(k));
+  }) || null;
+}
+
 // ------------------------------------------------------------
 //  Idioma (ES por defecto, EN opcional para el CEO)
 // ------------------------------------------------------------
@@ -91,6 +102,11 @@ const T = {
     keptHelp: "de los que confirmaron, cuántos vinieron", vsLastWeek: "vs semana pasada",
     confVsPres: "Confirmados vs presentes",
     byStageTitle: "Estudiantes por etapa del discipulado",
+    social: "Social", socialTitle: "Evento Social",
+    socialConfirmedTitle: "Confirmados para el social",
+    outOf: "de", studentsLower: "estudiantes",
+    byCoachWithNames: "Confirmados por coach",
+    noneConfirmedSocial: "Nadie confirmado para el social aún. Marca estudiantes en la pestaña Progress de cada coach.",
     search: "Buscar estudiante, coach, FFG o teléfono...",
     coachBreakdown: "Desglose por coach", rankedByAtt: "ordenado por asistencia",
     tapCoach: "Toca un coach para ver y editar sus estudiantes.",
@@ -131,6 +147,11 @@ const T = {
     keptHelp: "of those who confirmed, how many came", vsLastWeek: "vs last week",
     confVsPres: "Confirmed vs present",
     byStageTitle: "Students by discipleship stage",
+    social: "Social", socialTitle: "Social Event",
+    socialConfirmedTitle: "Confirmed for the social",
+    outOf: "out of", studentsLower: "students",
+    byCoachWithNames: "Confirmed by coach",
+    noneConfirmedSocial: "No one is confirmed for the social yet. Mark students in each coach's Progress tab.",
     search: "Search student, coach, FFG or phone...",
     coachBreakdown: "Coach breakdown", rankedByAtt: "ranked by attendance",
     tapCoach: "Tap a coach to view and edit their students.",
@@ -389,7 +410,9 @@ export default function LOFDashboard() {
 
   const inOverview = coachSel === "Overview";
   const inWeeks = coachSel === "Weeks";
-  const title = inOverview ? t("dashboard") : inWeeks ? t("weeklyAtt") : coachSel;
+  const inSocial = coachSel === "Social";
+  const socialStage = findSocialStage(stages);
+  const title = inOverview ? t("dashboard") : inWeeks ? t("weeklyAtt") : inSocial ? t("socialTitle") : coachSel;
 
   return (
     <div style={S.shell}>
@@ -412,6 +435,12 @@ export default function LOFDashboard() {
           onClick={() => { setCoachSel("Weeks"); setSidebarOpen(false); }}>
           <span style={S.navGlyph}>▦</span> {t("weeks")}
         </button>
+        {socialStage && (
+          <button style={{ ...S.navItem, ...(inSocial ? S.navItemOn : {}) }}
+            onClick={() => { setCoachSel("Social"); setSidebarOpen(false); }}>
+            <span style={S.navGlyph}>◎</span> {t("social")}
+          </button>
+        )}
 
         <div style={S.navLabel}>{coaches.length} {t("coaches").toUpperCase()}</div>
         <div style={S.navScroll}>
@@ -466,6 +495,9 @@ export default function LOFDashboard() {
             onCoach={(c) => { setCoachSel(c); setSearch(""); }} onOpen={(id) => setDetailId(id)} />
         ) : inWeeks ? (
           <WeeksView students={students} coaches={coaches} t={t} />
+        ) : inSocial ? (
+          <SocialView students={students} coaches={coaches} socialStage={socialStage}
+            onCoach={setCoachSel} onOpen={(id) => setDetailId(id)} t={t} />
         ) : inOverview ? (
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages}
             date={date} sunday={sunday} onCoach={setCoachSel} onExport={exportCSV}
@@ -698,6 +730,62 @@ function WeeksView({ students, coaches, t }) {
         </div>
       </div>
       <div style={S.hint}>{t("markFrom")}</div>
+    </>
+  );
+}
+
+// ============================================================
+//  Social — confirmados para el evento social (BBQ/Beach/Hiking)
+//  Pantalla pensada para mandar captura al CEO.
+// ============================================================
+function SocialView({ students, coaches, socialStage, onCoach, onOpen, t }) {
+  const act = students.filter((e) => e.active !== false);
+  const confirmedFor = (e) => !!(e.steps || {})[socialStage];
+  const totalConfirmed = act.filter(confirmedFor).length;
+
+  // por coach, con la lista de nombres confirmados
+  const byCoach = coaches.map((c) => {
+    const group = act.filter((e) => e.coach === c);
+    const yes = group.filter(confirmedFor);
+    return { coach: c, count: yes.length, total: group.length, students: yes };
+  }).sort((a, b) => b.count - a.count);
+
+  const coachesWithSome = byCoach.filter((r) => r.count > 0);
+
+  return (
+    <>
+      {/* Total grande para el CEO */}
+      <div style={S.socialHero}>
+        <div style={S.socialHeroLabel}>{t("socialConfirmedTitle")}</div>
+        <div style={S.socialHeroRow}>
+          <div style={S.socialHeroNum}>{totalConfirmed}</div>
+          <div style={S.socialHeroSub}>
+            <div style={S.socialStageName}>{socialStage}</div>
+            <div style={S.socialHeroOf}>{t("outOf")} {act.length} {t("studentsLower")}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Por coach con nombres */}
+      <div style={S.socialByCoachHead}>{t("byCoachWithNames")}</div>
+      {coachesWithSome.length === 0 && (
+        <div style={S.empty}>{t("noneConfirmedSocial")}</div>
+      )}
+      <div className="lof-social-grid" style={S.socialGrid}>
+        {coachesWithSome.map((r) => (
+          <div key={r.coach} style={S.socialCoachCard}>
+            <div style={S.socialCoachTop}>
+              <button style={S.socialCoachName} onClick={() => onCoach(r.coach)}>{r.coach}</button>
+              <span style={S.socialCoachCount}>{r.count}</span>
+            </div>
+            <div style={S.socialNames}>
+              {r.students.map((e) => (
+                <button key={e.id} style={S.socialNameChip} onClick={() => onOpen(e.id)}>{e.name}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 }
@@ -1115,6 +1203,7 @@ const CSS = "* { box-sizing: border-box; margin: 0; padding: 0; }"
   + "   .lof-burger { display: flex !important; }"
   + "   .lof-kpis { grid-template-columns: 1fr 1fr !important; }"
   + "   .lof-stagecounts { grid-template-columns: 1fr 1fr !important; }"
+  + "   .lof-social-grid { grid-template-columns: 1fr !important; }"
   + "   .lof-main { padding: 18px 16px 60px !important; }"
   + " }"
   + " @media (max-width: 520px) { .lof-kpis { grid-template-columns: 1fr 1fr !important; } .lof-formgrid { grid-template-columns: 1fr !important; } }";
@@ -1275,6 +1364,23 @@ const S = {
   weekTotalOf: { fontSize: 26, color: MUTE, fontWeight: 400 },
   weekTotalPct: { fontSize: 44, fontWeight: 800, color: GOLD, letterSpacing: "-1px", fontFamily: DISPLAY, fontVariantNumeric: "tabular-nums" },
   weekTotalRow: { background: "rgba(201,162,75,0.07)" },
+
+  // Social view
+  socialHero: { background: "linear-gradient(135deg, " + PANEL_2 + ", " + PANEL + ")", border: "1px solid rgba(201,162,75,0.3)", borderRadius: 22, padding: "28px 30px", marginBottom: 22 },
+  socialHeroLabel: { fontSize: 12.5, color: MUTE, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 10 },
+  socialHeroRow: { display: "flex", alignItems: "center", gap: 22 },
+  socialHeroNum: { fontSize: 78, fontWeight: 800, fontFamily: DISPLAY, color: GOLD, lineHeight: 0.9, letterSpacing: "-3px", fontVariantNumeric: "tabular-nums" },
+  socialHeroSub: {},
+  socialStageName: { fontSize: 17, fontWeight: 700, color: TXT, marginBottom: 3 },
+  socialHeroOf: { fontSize: 13, color: MUTE },
+  socialByCoachHead: { fontSize: 10.5, color: MUTE, fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase", margin: "2px 2px 14px" },
+  socialGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  socialCoachCard: { background: PANEL, border: "1px solid " + LINE, borderRadius: 16, padding: "18px 20px" },
+  socialCoachTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10 },
+  socialCoachName: { fontSize: 15.5, fontWeight: 700, color: TXT, background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "left" },
+  socialCoachCount: { fontSize: 18, fontWeight: 800, fontFamily: DISPLAY, color: GOLD, background: GOLD_SOFT, borderRadius: 10, padding: "4px 14px", fontVariantNumeric: "tabular-nums", flexShrink: 0 },
+  socialNames: { display: "flex", flexWrap: "wrap", gap: 7 },
+  socialNameChip: { fontSize: 13, color: TXT, background: PANEL_2, border: "1px solid " + LINE_2, borderRadius: 9, padding: "7px 13px", cursor: "pointer", fontWeight: 500 },
 
   // Modals
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20, backdropFilter: "blur(3px)" },
