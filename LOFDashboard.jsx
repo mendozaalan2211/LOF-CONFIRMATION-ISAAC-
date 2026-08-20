@@ -76,15 +76,29 @@ function courseWeeksSoFar() {
   return arr;
 }
 
-// Detecta cuál de las etapas es la del evento social (BBQ/Beach/Hiking).
-// Busca por palabras clave para que funcione aunque el nombre cambie un poco.
-function findSocialStage(stages) {
-  if (!stages) return null;
-  const keys = ["social", "bbq", "beach", "hiking", "hike"];
-  return stages.find((st) => {
-    const low = st.toLowerCase();
+// Detecta las etapas de eventos sociales por separado (BBQ, Beach, Hiking, Pickleball...).
+// Detecta de DOS formas, así que tienes flexibilidad total:
+//   1) cualquier etapa que EMPIECE con "Social" (ej: "Social Camping") — así puedes
+//      crear eventos nuevos desde el Admin sin que nadie cambie el código.
+//   2) por palabras clave conocidas, para que tus etapas actuales sigan funcionando.
+function findSocialStages(stages) {
+  if (!stages) return [];
+  const keys = ["bbq", "beach", "hiking", "hike", "haking", "pickleball", "pickle",
+    "camping", "retreat", "retiro", "bowling", "boliche", "social", "party", "fiesta"];
+  return stages.filter((st) => {
+    const low = st.toLowerCase().trim();
+    if (low.startsWith("social")) return true;
     return keys.some((k) => low.includes(k));
-  }) || null;
+  });
+}
+
+// Ordena las etapas para MOSTRARLAS con los eventos sociales primero
+// (BBQ, Beach, Hiking), el resto después. Solo visual, no toca los datos.
+function orderedStages(stages) {
+  if (!stages) return [];
+  const social = findSocialStages(stages);
+  const rest = stages.filter((st) => !social.includes(st));
+  return [...social, ...rest];
 }
 
 // ------------------------------------------------------------
@@ -103,10 +117,11 @@ const T = {
     confVsPres: "Confirmados vs presentes",
     byStageTitle: "Estudiantes por etapa del discipulado",
     social: "Social", socialTitle: "Evento Social",
-    socialConfirmedTitle: "Confirmados para el social",
+    socialAnyTitle: "Van a un evento social",
+    goingToSocial: "Van a algún evento", perEventTitle: "Por evento",
     outOf: "de", studentsLower: "estudiantes",
-    byCoachWithNames: "Confirmados por coach",
-    noneConfirmedSocial: "Nadie confirmado para el social aún. Marca estudiantes en la pestaña Progress de cada coach.",
+    byCoachWithNames: "Por coach — quiénes van",
+    noneConfirmedSocial: "Nadie anotado para un evento social aún. Marca estudiantes en la pestaña Progress de cada coach.",
     search: "Buscar estudiante, coach, FFG o teléfono...",
     coachBreakdown: "Desglose por coach", rankedByAtt: "ordenado por asistencia",
     tapCoach: "Toca un coach para ver y editar sus estudiantes.",
@@ -148,10 +163,11 @@ const T = {
     confVsPres: "Confirmed vs present",
     byStageTitle: "Students by discipleship stage",
     social: "Social", socialTitle: "Social Event",
-    socialConfirmedTitle: "Confirmed for the social",
+    socialAnyTitle: "Going to a social event",
+    goingToSocial: "Going to any event", perEventTitle: "By event",
     outOf: "out of", studentsLower: "students",
-    byCoachWithNames: "Confirmed by coach",
-    noneConfirmedSocial: "No one is confirmed for the social yet. Mark students in each coach's Progress tab.",
+    byCoachWithNames: "By coach — who's going",
+    noneConfirmedSocial: "No one is signed up for a social event yet. Mark students in each coach's Progress tab.",
     search: "Search student, coach, FFG or phone...",
     coachBreakdown: "Coach breakdown", rankedByAtt: "ranked by attendance",
     tapCoach: "Tap a coach to view and edit their students.",
@@ -411,7 +427,7 @@ export default function LOFDashboard() {
   const inOverview = coachSel === "Overview";
   const inWeeks = coachSel === "Weeks";
   const inSocial = coachSel === "Social";
-  const socialStage = findSocialStage(stages);
+  const socialStages = findSocialStages(stages);
   const title = inOverview ? t("dashboard") : inWeeks ? t("weeklyAtt") : inSocial ? t("socialTitle") : coachSel;
 
   return (
@@ -435,7 +451,7 @@ export default function LOFDashboard() {
           onClick={() => { setCoachSel("Weeks"); setSidebarOpen(false); }}>
           <span style={S.navGlyph}>▦</span> {t("weeks")}
         </button>
-        {socialStage && (
+        {socialStages.length > 0 && (
           <button style={{ ...S.navItem, ...(inSocial ? S.navItemOn : {}) }}
             onClick={() => { setCoachSel("Social"); setSidebarOpen(false); }}>
             <span style={S.navGlyph}>◎</span> {t("social")}
@@ -496,7 +512,7 @@ export default function LOFDashboard() {
         ) : inWeeks ? (
           <WeeksView students={students} coaches={coaches} t={t} />
         ) : inSocial ? (
-          <SocialView students={students} coaches={coaches} socialStage={socialStage}
+          <SocialView students={students} coaches={coaches} socialStages={socialStages}
             onCoach={setCoachSel} onOpen={(id) => setDetailId(id)} t={t} />
         ) : inOverview ? (
           <OverviewView totals={totals} coaches={coaches} statsCoach={statsCoach} stages={stages}
@@ -738,32 +754,78 @@ function WeeksView({ students, coaches, t }) {
 //  Social — confirmados para el evento social (BBQ/Beach/Hiking)
 //  Pantalla pensada para mandar captura al CEO.
 // ============================================================
-function SocialView({ students, coaches, socialStage, onCoach, onOpen, t }) {
+function SocialView({ students, coaches, socialStages, onCoach, onOpen, t }) {
   const act = students.filter((e) => e.active !== false);
-  const confirmedFor = (e) => !!(e.steps || {})[socialStage];
-  const totalConfirmed = act.filter(confirmedFor).length;
+  // ¿va a algún evento social? (cualquiera de las etapas detectadas)
+  const goesToAny = (e) => socialStages.some((st) => (e.steps || {})[st]);
+  const totalAny = act.filter(goesToAny).length;
 
-  // por coach, con la lista de nombres confirmados
+  // total por cada evento (BBQ, Beach, Hiking)
+  const perEvent = socialStages.map((st) => ({
+    stage: st,
+    count: act.filter((e) => (e.steps || {})[st]).length,
+  })).sort((a, b) => b.count - a.count);
+
+  // etiqueta corta de a qué eventos va un estudiante (ej: "BBQ · Beach")
+  const eventsOf = (e) => socialStages.filter((st) => (e.steps || {})[st]);
+
+  // por coach: quiénes van a algún evento, con sus nombres y a qué evento
   const byCoach = coaches.map((c) => {
     const group = act.filter((e) => e.coach === c);
-    const yes = group.filter(confirmedFor);
-    return { coach: c, count: yes.length, total: group.length, students: yes };
+    const yes = group.filter(goesToAny);
+    return { coach: c, count: yes.length, students: yes };
   }).sort((a, b) => b.count - a.count);
-
   const coachesWithSome = byCoach.filter((r) => r.count > 0);
+
+  // color por evento para las etiquetas
+  const eventColor = (st) => {
+    const low = st.toLowerCase();
+    if (low.includes("bbq")) return "#d99a6b";
+    if (low.includes("beach")) return "#6bb3d9";
+    if (low.includes("hik") || low.includes("hak")) return SAGE;
+    if (low.includes("pickle")) return "#c77dff";
+    if (low.includes("camp")) return "#8fb08a";
+    if (low.includes("bowl") || low.includes("bolich")) return "#e0a96d";
+    return GOLD;
+  };
+  // nombre corto del evento (solo la palabra clave). Si empieza con "Social",
+  // quita esa palabra y muestra el resto (ej: "Social Pickleball" -> "Pickleball").
+  const shortName = (st) => {
+    const low = st.toLowerCase();
+    if (low.includes("bbq")) return "BBQ";
+    if (low.includes("beach")) return "Beach";
+    if (low.includes("hik") || low.includes("hak")) return "Hiking";
+    if (low.includes("pickle")) return "Pickleball";
+    if (low.includes("camp")) return "Camping";
+    if (low.includes("bowl") || low.includes("bolich")) return "Bowling";
+    // si empieza con "Social ", muestra lo que sigue
+    const cleaned = st.replace(/^social\s*/i, "").trim();
+    return cleaned || st;
+  };
 
   return (
     <>
-      {/* Total grande para el CEO */}
+      {/* Total general */}
       <div style={S.socialHero}>
-        <div style={S.socialHeroLabel}>{t("socialConfirmedTitle")}</div>
+        <div style={S.socialHeroLabel}>{t("socialAnyTitle")}</div>
         <div style={S.socialHeroRow}>
-          <div style={S.socialHeroNum}>{totalConfirmed}</div>
+          <div style={S.socialHeroNum}>{totalAny}</div>
           <div style={S.socialHeroSub}>
-            <div style={S.socialStageName}>{socialStage}</div>
+            <div style={S.socialStageName}>{t("goingToSocial")}</div>
             <div style={S.socialHeroOf}>{t("outOf")} {act.length} {t("studentsLower")}</div>
           </div>
         </div>
+      </div>
+
+      {/* Total por evento */}
+      <div style={S.socialByCoachHead}>{t("perEventTitle")}</div>
+      <div style={S.socialEventGrid}>
+        {perEvent.map((ev) => (
+          <div key={ev.stage} style={{ ...S.socialEventCard, borderColor: eventColor(ev.stage) + "55" }}>
+            <div style={{ ...S.socialEventNum, color: eventColor(ev.stage) }}>{ev.count}</div>
+            <div style={S.socialEventName}>{shortName(ev.stage)}</div>
+          </div>
+        ))}
       </div>
 
       {/* Por coach con nombres */}
@@ -780,7 +842,14 @@ function SocialView({ students, coaches, socialStage, onCoach, onOpen, t }) {
             </div>
             <div style={S.socialNames}>
               {r.students.map((e) => (
-                <button key={e.id} style={S.socialNameChip} onClick={() => onOpen(e.id)}>{e.name}</button>
+                <button key={e.id} style={S.socialNameRow} onClick={() => onOpen(e.id)}>
+                  <span style={S.socialNameText}>{e.name}</span>
+                  <span style={S.socialNameTags}>
+                    {eventsOf(e).map((st) => (
+                      <span key={st} style={{ ...S.socialTag, color: eventColor(st), borderColor: eventColor(st) + "55" }}>{shortName(st)}</span>
+                    ))}
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -896,7 +965,7 @@ function CoachView({ coach, students, stats, stages, date, sunday, toggleStep, t
 
               {tab === "progress" && !inactive && (
                 <div style={S.steps}>
-                  {stages.map((st) => {
+                  {orderedStages(stages).map((st) => {
                     const on = !!(e.steps || {})[st];
                     return (
                       <button key={st} onClick={() => toggleStep(e.id, st)} style={{ ...S.step, ...(on ? S.stepOn : {}) }}>
@@ -960,7 +1029,7 @@ function StudentDetailModal({ e, stages, sunday, onToggleStep, onToggleAtt, onTo
 
         <div style={S.adminSection}>{stages.length} {t("stages").toUpperCase()}</div>
         <div style={S.steps}>
-          {stages.map((st) => {
+          {orderedStages(stages).map((st) => {
             const on = !!(e.steps || {})[st];
             return (
               <button key={st} onClick={() => onToggleStep(e.id, st)} style={{ ...S.step, ...(on ? S.stepOn : {}) }}>
@@ -1374,13 +1443,21 @@ const S = {
   socialStageName: { fontSize: 17, fontWeight: 700, color: TXT, marginBottom: 3 },
   socialHeroOf: { fontSize: 13, color: MUTE },
   socialByCoachHead: { fontSize: 10.5, color: MUTE, fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase", margin: "2px 2px 14px" },
+  // total por evento
+  socialEventGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginBottom: 26 },
+  socialEventCard: { background: PANEL, border: "1px solid " + LINE_2, borderRadius: 18, padding: "22px 20px", textAlign: "center" },
+  socialEventNum: { fontSize: 46, fontWeight: 800, fontFamily: DISPLAY, letterSpacing: "-2px", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
+  socialEventName: { fontSize: 14, color: TXT, fontWeight: 600, marginTop: 8 },
   socialGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   socialCoachCard: { background: PANEL, border: "1px solid " + LINE, borderRadius: 16, padding: "18px 20px" },
   socialCoachTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10 },
   socialCoachName: { fontSize: 15.5, fontWeight: 700, color: TXT, background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "left" },
   socialCoachCount: { fontSize: 18, fontWeight: 800, fontFamily: DISPLAY, color: GOLD, background: GOLD_SOFT, borderRadius: 10, padding: "4px 14px", fontVariantNumeric: "tabular-nums", flexShrink: 0 },
-  socialNames: { display: "flex", flexWrap: "wrap", gap: 7 },
-  socialNameChip: { fontSize: 13, color: TXT, background: PANEL_2, border: "1px solid " + LINE_2, borderRadius: 9, padding: "7px 13px", cursor: "pointer", fontWeight: 500 },
+  socialNames: { display: "flex", flexDirection: "column", gap: 7 },
+  socialNameRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: PANEL_2, border: "1px solid " + LINE, borderRadius: 10, padding: "9px 13px", cursor: "pointer", width: "100%", textAlign: "left" },
+  socialNameText: { fontSize: 13.5, color: TXT, fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  socialNameTags: { display: "flex", gap: 5, flexShrink: 0 },
+  socialTag: { fontSize: 10.5, fontWeight: 700, border: "1px solid", borderRadius: 999, padding: "3px 9px", whiteSpace: "nowrap" },
 
   // Modals
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20, backdropFilter: "blur(3px)" },
